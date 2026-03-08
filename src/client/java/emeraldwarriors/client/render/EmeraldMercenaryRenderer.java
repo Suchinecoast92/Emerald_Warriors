@@ -3,9 +3,13 @@ package emeraldwarriors.client.render;
 import emeraldwarriors.Emerald_Warriors;
 import emeraldwarriors.client.model.MercenaryPlayerModel;
 import emeraldwarriors.entity.EmeraldMercenaryEntity;
+import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.model.geom.ModelLayers;
+
+import net.minecraft.client.renderer.entity.ArmorModelSet;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.entity.HumanoidMobRenderer;
+import net.minecraft.client.renderer.entity.layers.HumanoidArmorLayer;
 import net.minecraft.client.renderer.entity.state.HumanoidRenderState;
 import net.minecraft.resources.Identifier;
 
@@ -20,6 +24,14 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
         super(context, new MercenaryPlayerModel<>(context.bakeLayer(ModelLayers.PLAYER), false), 0.5F);
         this.steveModel = this.getModel();
         this.alexModel = new MercenaryPlayerModel<>(context.bakeLayer(ModelLayers.PLAYER_SLIM), true);
+
+        // Armor layer — uses the player armor model set so vanilla armor renders on the mercenary
+        ArmorModelSet<HumanoidModel<MercenaryRenderState>> armorModels = ArmorModelSet.bake(
+                ModelLayers.PLAYER_ARMOR,
+                context.getModelSet(),
+                HumanoidModel::new
+        );
+        this.addLayer(new HumanoidArmorLayer<>(this, armorModels, context.getEquipmentRenderer()));
     }
 
     // Estado de render per-entidad: cada entidad tiene su propia instancia

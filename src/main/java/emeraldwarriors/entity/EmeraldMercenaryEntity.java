@@ -1,6 +1,8 @@
 package emeraldwarriors.entity;
 
 import emeraldwarriors.entity.ai.EmeraldFollowOwnerGoal;
+import emeraldwarriors.entity.ai.EmeraldMeleeAttackGoal;
+import emeraldwarriors.entity.ai.EmeraldProtectOwnerGoal;
 import emeraldwarriors.inventory.MercenaryInventory;
 import emeraldwarriors.inventory.MercenaryMenu;
 import emeraldwarriors.mercenary.MercenaryRank;
@@ -19,7 +21,6 @@ import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
-import net.minecraft.world.entity.ai.goal.MeleeAttackGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
 import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
@@ -45,7 +46,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
 
     private MercenaryRole currentRole = MercenaryRole.NONE;
 
-    private MeleeAttackGoal meleeAttackGoal;
+    private EmeraldMeleeAttackGoal meleeAttackGoal;
 
     // Dueño y apariencia básica
     private UUID ownerUuid;
@@ -58,7 +59,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
     private int maxExperience = 100;
 
     // Inventario persistente del mercenario (equipo + mochila)
-    private final MercenaryInventory mercenaryInventory = new MercenaryInventory();
+    private final MercenaryInventory mercenaryInventory = new MercenaryInventory(this);
 
     // Estado temporal para la "oferta" de contrato (primer click de esmeraldas)
     private UUID pendingContractPlayer;
@@ -131,17 +132,24 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
 
     @Override
     protected void registerGoals() {
-        this.goalSelector.addGoal(1, new FloatGoal(this));
-        this.goalSelector.addGoal(2, new EmeraldFollowOwnerGoal(this, 1.0D, 5.0F, 2.0F));
+        // Prioridad 0: Supervivencia
+        this.goalSelector.addGoal(0, new FloatGoal(this));
 
-        this.meleeAttackGoal = new MeleeAttackGoal(this, 1.2D, true);
+        // Prioridad 2: Ataque cuerpo a cuerpo (con animación de swing)
+        this.meleeAttackGoal = new EmeraldMeleeAttackGoal(this, 1.2D, true);
 
+        // Prioridad 5: Seguir al dueño
+        this.goalSelector.addGoal(5, new EmeraldFollowOwnerGoal(this, 1.0D, 5.0F, 2.0F));
+
+        // Prioridad 8-10: Comportamiento idle
         this.goalSelector.addGoal(8, new LookAtPlayerGoal(this, Player.class, 8.0F));
         this.goalSelector.addGoal(9, new RandomLookAroundGoal(this));
         this.goalSelector.addGoal(10, new WaterAvoidingRandomStrollGoal(this, 1.0D));
 
+        // Target goals
         this.targetSelector.addGoal(1, new HurtByTargetGoal(this));
-        this.targetSelector.addGoal(2, new NearestAttackableTargetGoal<>(this, Monster.class, true));
+        this.targetSelector.addGoal(2, new EmeraldProtectOwnerGoal(this));
+        this.targetSelector.addGoal(3, new NearestAttackableTargetGoal<>(this, Monster.class, true));
 
         this.refreshCombatRoleAndGoals();
     }
@@ -197,10 +205,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
 
         if (hasBow) {
             this.currentRole = MercenaryRole.ARCHER;
-        } else if (hasMeleeWeapon) {
-            this.currentRole = MercenaryRole.GUARDIAN;
         } else {
-            this.currentRole = MercenaryRole.NONE;
+            // Sin arma o con arma melee, trátalo como GUARDIAN para que siempre tenga IA de combate cuerpo a cuerpo.
+            this.currentRole = MercenaryRole.GUARDIAN;
         }
     }
 

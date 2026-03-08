@@ -1,6 +1,9 @@
 package emeraldwarriors.inventory;
 
+import emeraldwarriors.entity.EmeraldMercenaryEntity;
 import net.minecraft.world.SimpleContainer;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.item.ItemStack;
 
 /**
  * Contenedor interno del mercenario: 12 slots en total.
@@ -23,7 +26,44 @@ public class MercenaryInventory extends SimpleContainer {
     public static final int SLOT_BAG_START   = 6;
     public static final int SIZE             = 12;
 
+    private final EmeraldMercenaryEntity owner;
+
+    /**
+     * Constructor usado en el cliente (no conoce la entidad dueña).
+     * No sincroniza equipo visible porque owner es null.
+     */
     public MercenaryInventory() {
+        this(null);
+    }
+
+    /**
+     * Constructor server-side con referencia al EmeraldMercenaryEntity dueño.
+     * Permite sincronizar los slots 0-5 con los EquipmentSlot reales.
+     */
+    public MercenaryInventory(EmeraldMercenaryEntity owner) {
         super(SIZE);
+        this.owner = owner;
+    }
+
+    @Override
+    public void setItem(int index, ItemStack stack) {
+        super.setItem(index, stack);
+
+        if (this.owner == null) {
+            return;
+        }
+
+        // Sincronizar los primeros 6 slots con el equipo visible del entity
+        switch (index) {
+            case SLOT_MAIN_HAND -> this.owner.setItemSlot(EquipmentSlot.MAINHAND, stack);
+            case SLOT_OFF_HAND -> this.owner.setItemSlot(EquipmentSlot.OFFHAND, stack);
+            case SLOT_HELMET -> this.owner.setItemSlot(EquipmentSlot.HEAD, stack);
+            case SLOT_CHESTPLATE -> this.owner.setItemSlot(EquipmentSlot.CHEST, stack);
+            case SLOT_LEGGINGS -> this.owner.setItemSlot(EquipmentSlot.LEGS, stack);
+            case SLOT_BOOTS -> this.owner.setItemSlot(EquipmentSlot.FEET, stack);
+            default -> {
+                // Slots de mochila (6-11) no afectan al equipo visible directamente.
+            }
+        }
     }
 }
