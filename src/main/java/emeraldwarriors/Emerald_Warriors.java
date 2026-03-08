@@ -1,6 +1,7 @@
 package emeraldwarriors;
 
 import emeraldwarriors.entity.ModEntities;
+import emeraldwarriors.menu.ModMenus;
 import net.fabricmc.api.ModInitializer;
 
 import org.slf4j.Logger;
@@ -21,6 +22,7 @@ public class Emerald_Warriors implements ModInitializer {
 		// Proceed with mild caution.
 
 		ModEntities.registerAttributes();
+		ModMenus.register();
 		LOGGER.info("Emerald Warriors: mercenary system initialized (entities registered).");
 	}
 }
