@@ -124,7 +124,7 @@ El proyecto está en desarrollo activo. Las áreas principales para contribució
 
 ## Licencia
 
-Este mod está desarrollado como proyecto educativo y de aprendizaje de la API de Minecraft 1.21.11.
+Este mod está desarrollado como de aprendizaje de la API de Minecraft 1.21.11.
 
 ---
 
