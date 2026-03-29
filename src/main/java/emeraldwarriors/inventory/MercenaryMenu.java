@@ -3,13 +3,16 @@ package emeraldwarriors.inventory;
 import emeraldwarriors.menu.ModMenus;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.Container;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.inventory.SimpleContainerData;
 import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 /**
  * Menú del inventario del mercenario — estilo inventario vanilla.
@@ -163,9 +166,78 @@ public class MercenaryMenu extends AbstractContainerMenu {
         final Identifier icon = Identifier.withDefaultNamespace(spritePath);
         return new Slot(container, slotIndex, x, y) {
             @Override
+            public boolean mayPlace(ItemStack stack) {
+                return switch (slotIndex) {
+                    case MercenaryInventory.SLOT_HELMET -> isArmorForSlot(stack, EquipmentSlot.HEAD);
+                    case MercenaryInventory.SLOT_CHESTPLATE -> isArmorForSlot(stack, EquipmentSlot.CHEST);
+                    case MercenaryInventory.SLOT_LEGGINGS -> isArmorForSlot(stack, EquipmentSlot.LEGS);
+                    case MercenaryInventory.SLOT_BOOTS -> isArmorForSlot(stack, EquipmentSlot.FEET);
+                    case MercenaryInventory.SLOT_MAIN_HAND -> isMainHandItem(stack);
+                    case MercenaryInventory.SLOT_OFF_HAND -> isOffHandItem(stack);
+                    default -> super.mayPlace(stack);
+                };
+            }
+
+            @Override
+            public int getMaxStackSize() {
+                // Equipo: 1 por slot; otros usan el límite por defecto
+                return switch (slotIndex) {
+                    case MercenaryInventory.SLOT_MAIN_HAND,
+                            MercenaryInventory.SLOT_OFF_HAND,
+                            MercenaryInventory.SLOT_HELMET,
+                            MercenaryInventory.SLOT_CHESTPLATE,
+                            MercenaryInventory.SLOT_LEGGINGS,
+                            MercenaryInventory.SLOT_BOOTS -> 1;
+                    default -> super.getMaxStackSize();
+                };
+            }
+
+            @Override
             public Identifier getNoItemIcon() {
                 return icon;
             }
         };
     }
+
+    private static boolean isArmorForSlot(ItemStack stack, EquipmentSlot slot) {
+        if (stack.isEmpty()) {
+            return false;
+        }
+
+        // 1.21.11: usamos los atributos de equipo para saber si un ítem es
+        // equipable en un slot concreto (casco, peto, etc.).
+        final boolean[] found = new boolean[1];
+        stack.forEachModifier(slot, (attribute, modifier) -> found[0] = true);
+        return found[0];
+    }
+
+    private static boolean hasMainHandAttributes(ItemStack stack) {
+        if (stack.isEmpty()) {
+            return false;
+        }
+        final boolean[] found = new boolean[1];
+        stack.forEachModifier(EquipmentSlot.MAINHAND, (attribute, modifier) -> found[0] = true);
+        return found[0];
+    }
+
+    private static boolean isMainHandItem(ItemStack stack) {
+        // Mano principal: cualquier ítem que tenga atributos para MAINHAND
+        // (espadas, hachas, picos, lanzas, arcos, etc. en el sistema nuevo).
+        return hasMainHandAttributes(stack);
+    }
+
+    private static boolean isOffHandItem(ItemStack stack) {
+        if (stack.isEmpty()) {
+            return false;
+        }
+
+        // Escudo y tótem vanilla siempre permitidos en mano secundaria
+        if (stack.is(Items.SHIELD) || stack.is(Items.TOTEM_OF_UNDYING)) {
+            return true;
+        }
+
+        // También permitimos armas/herramientas que tengan atributos de MAINHAND
+        return hasMainHandAttributes(stack);
+    }
 }
+

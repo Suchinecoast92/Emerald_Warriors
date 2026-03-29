@@ -1,6 +1,7 @@
 package emeraldwarriors.entity.ai;
 
 import emeraldwarriors.entity.EmeraldMercenaryEntity;
+import emeraldwarriors.mercenary.MercenaryOrder;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.navigation.PathNavigation;
@@ -32,6 +33,14 @@ public class EmeraldFollowOwnerGoal extends Goal {
 
     @Override
     public boolean canUse() {
+        MercenaryOrder order = this.mercenary.getCurrentOrder();
+        if (order != MercenaryOrder.FOLLOW && order != MercenaryOrder.NONE) {
+            return false;
+        }
+        // No seguir al dueño si estamos en combate
+        if (this.mercenary.getTarget() != null && this.mercenary.getTarget().isAlive()) {
+            return false;
+        }
         LivingEntity owner = this.mercenary.getOwner();
         if (owner == null) {
             return false;
@@ -48,6 +57,14 @@ public class EmeraldFollowOwnerGoal extends Goal {
 
     @Override
     public boolean canContinueToUse() {
+        MercenaryOrder order = this.mercenary.getCurrentOrder();
+        if (order != MercenaryOrder.FOLLOW && order != MercenaryOrder.NONE) {
+            return false;
+        }
+        // Dejar de seguir si entramos en combate
+        if (this.mercenary.getTarget() != null && this.mercenary.getTarget().isAlive()) {
+            return false;
+        }
         if (this.navigation.isDone()) {
             return false;
         }

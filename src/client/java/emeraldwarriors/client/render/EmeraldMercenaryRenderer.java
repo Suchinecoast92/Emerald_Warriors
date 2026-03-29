@@ -12,6 +12,12 @@ import net.minecraft.client.renderer.entity.HumanoidMobRenderer;
 import net.minecraft.client.renderer.entity.layers.HumanoidArmorLayer;
 import net.minecraft.client.renderer.entity.state.HumanoidRenderState;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.HumanoidArm;
+import net.minecraft.world.item.Items;
+
+import java.util.HashMap;
+import java.util.Map;
 
 public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercenaryEntity, EmeraldMercenaryRenderer.MercenaryRenderState, MercenaryPlayerModel<EmeraldMercenaryRenderer.MercenaryRenderState>> {
     private static final Identifier FALLBACK_TEXTURE = Identifier.fromNamespaceAndPath(
@@ -35,6 +41,8 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
     }
 
     // Estado de render per-entidad: cada entidad tiene su propia instancia
+    private static final Map<Integer, Identifier> LOGGED_TEXTURES = new HashMap<>();
+
     public static class MercenaryRenderState extends HumanoidRenderState {
         public Identifier texture = FALLBACK_TEXTURE;
         public boolean slim = false;
@@ -59,18 +67,50 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
 
         boolean isSlim = skinId.endsWith("f");
         state.slim = isSlim;
-        state.texture = Identifier.fromNamespaceAndPath(
+        Identifier newTexture = Identifier.fromNamespaceAndPath(
                 Emerald_Warriors.MOD_ID,
                 "textures/entity/mercenary/" + skinId + "/" + skinId + "_" + rankSuffix + ".png"
         );
+        state.texture = newTexture;
 
         // Seleccionar modelo ANTES de super para que la geometría sea correcta
         this.model = isSlim ? this.alexModel : this.steveModel;
 
         super.extractRenderState(entity, state, partialTick);
 
-        Emerald_Warriors.LOGGER.info("[EmeraldMercenaryRenderer] Entity {} skinId={} slim={} texture={}",
-                entity.getId(), skinId, isSlim, state.texture);
+        // === Forzar pose de bloqueo con escudo ===
+        // Cuando el mercenario está "usando" un escudo (ShieldAgainstCreeperGoal startUsingItem),
+        // nos aseguramos de que el brazo correspondiente use la pose BLOCK para que el escudo
+        // se vea al frente como en Alex.
+        if (entity.isUsingItem()) {
+            InteractionHand usedHand = entity.getUsedItemHand();
+
+            // Escudo en mano principal
+            if (usedHand == InteractionHand.MAIN_HAND && entity.getMainHandItem().is(Items.SHIELD)) {
+                if (state.mainArm == HumanoidArm.RIGHT) {
+                    state.rightArmPose = HumanoidModel.ArmPose.BLOCK;
+                } else {
+                    state.leftArmPose = HumanoidModel.ArmPose.BLOCK;
+                }
+            }
+
+            // Escudo en offhand (caso típico: espada mano principal, escudo en la otra)
+            if (usedHand == InteractionHand.OFF_HAND && entity.getOffhandItem().is(Items.SHIELD)) {
+                if (state.mainArm == HumanoidArm.RIGHT) {
+                    // Main RIGHT -> escudo está en brazo izquierdo
+                    state.leftArmPose = HumanoidModel.ArmPose.BLOCK;
+                } else {
+                    state.rightArmPose = HumanoidModel.ArmPose.BLOCK;
+                }
+            }
+        }
+
+        Identifier prev = LOGGED_TEXTURES.get(entity.getId());
+        if (prev == null || !prev.equals(newTexture)) {
+            LOGGED_TEXTURES.put(entity.getId(), newTexture);
+            Emerald_Warriors.LOGGER.info("[EmeraldMercenaryRenderer] Entity {} skinId={} slim={} texture={}",
+                    entity.getId(), skinId, isSlim, newTexture);
+        }
     }
 
     @Override

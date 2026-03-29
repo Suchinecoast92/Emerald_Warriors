@@ -3,20 +3,36 @@ package emeraldwarriors.entity;
 import emeraldwarriors.entity.ai.EmeraldFollowOwnerGoal;
 import emeraldwarriors.entity.ai.EmeraldMeleeAttackGoal;
 import emeraldwarriors.entity.ai.EmeraldProtectOwnerGoal;
+import emeraldwarriors.entity.ai.GuardPositionGoal;
+import emeraldwarriors.entity.ai.OwnerHurtTargetGoal;
+import emeraldwarriors.entity.ai.PatrolAroundPointGoal;
+import emeraldwarriors.entity.ai.RetreatLowHpGoal;
+import emeraldwarriors.entity.ai.ShieldAgainstCreeperGoal;
 import emeraldwarriors.inventory.MercenaryInventory;
 import emeraldwarriors.inventory.MercenaryMenu;
+import emeraldwarriors.mercenary.MercenaryOrder;
 import emeraldwarriors.mercenary.MercenaryRank;
 import emeraldwarriors.mercenary.MercenaryRole;
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Vec3i;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.DifficultyInstance;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.MenuProvider;
+import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.PathfinderMob;
+import net.minecraft.world.entity.SpawnGroupData;
+import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
@@ -34,6 +50,7 @@ import net.minecraft.world.item.BowItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.ServerLevelAccessor;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 
@@ -44,6 +61,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
     private static final int TICKS_PER_DAY = 24000;
     private static final int CONTRACT_OFFER_TIMEOUT_TICKS = 200; // ~10 segundos
 
+    private static final EntityDataAccessor<Integer> DATA_RANK_ORDINAL = SynchedEntityData.defineId(EmeraldMercenaryEntity.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Integer> DATA_ORDER_ORDINAL = SynchedEntityData.defineId(EmeraldMercenaryEntity.class, EntityDataSerializers.INT);
+
     private MercenaryRole currentRole = MercenaryRole.NONE;
 
     private EmeraldMeleeAttackGoal meleeAttackGoal;
@@ -53,10 +73,21 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
     private String skinId;
     private MercenaryRank rank = MercenaryRank.RECRUIT;
     private int contractTicksRemaining;
+    private int contractEmeraldsPerService;
+    private int contractDaysPerPurchase;
+
+    // Sistema de órdenes
+    private MercenaryOrder currentOrder = MercenaryOrder.NONE;
+    private BlockPos guardPos;
+    private BlockPos patrolCenter;
 
     // Progreso de experiencia del mercenario (para futura progresión de rango)
     private int experience;
     private int maxExperience = 100;
+
+    // Atención temporal al jugador tras la oferta de contrato
+    private UUID attentionPlayer;
+    private int attentionTicks;
 
     // Inventario persistente del mercenario (equipo + mochila)
     private final MercenaryInventory mercenaryInventory = new MercenaryInventory(this);
@@ -64,6 +95,81 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
     // Estado temporal para la "oferta" de contrato (primer click de esmeraldas)
     private UUID pendingContractPlayer;
     private int pendingContractTick;
+
+    private static final String[] RECRUIT_PROPOSALS = new String[] {
+            "Puedo trabajar.",
+            "Disponible.",
+            "Tarea simple.",
+            "Empiezo si quieres.",
+            "Poco costo."
+    };
+    private static final String[] RECRUIT_ACCEPTANCES = new String[] {
+            "Recibido.",
+            "Inicio ahora.",
+            "Haré el intento.",
+            "De acuerdo.",
+            "Trabajo en curso."
+    };
+
+    private static final String[] SOLDIER_PROPOSALS = new String[] {
+            "Trabajo fiable.",
+            "Tengo práctica.",
+            "Costo estándar.",
+            "Puedo hacerlo.",
+            "Servicio listo."
+    };
+    private static final String[] SOLDIER_ACCEPTANCES = new String[] {
+            "Aceptado.",
+            "Me encargo.",
+            "En proceso.",
+            "Todo claro.",
+            "Procediendo."
+    };
+
+    private static final String[] SENTINEL_PROPOSALS = new String[] {
+            "Vigilancia activa.",
+            "Nada se escapa.",
+            "Zona segura.",
+            "Observo bien.",
+            "Control constante."
+    };
+    private static final String[] SENTINEL_ACCEPTANCES = new String[] {
+            "Área cubierta.",
+            "Alerta activa.",
+            "Sin novedades.",
+            "Todo en orden.",
+            "Bajo control."
+    };
+
+    private static final String[] VETERAN_PROPOSALS = new String[] {
+            "Experiencia alta.",
+            "Trabajo preciso.",
+            "Sin errores.",
+            "Hecho antes.",
+            "Resultado seguro."
+    };
+    private static final String[] VETERAN_ACCEPTANCES = new String[] {
+            "Confirmado.",
+            "Resolviendo.",
+            "Avance estable.",
+            "Casi listo.",
+            "Terminaré pronto."
+    };
+
+    private static final String[] ANCIENT_GUARD_PROPOSALS = new String[] {
+            "Servicio limitado.",
+            "Alta exigencia.",
+            "Condiciones claras.",
+            "No siempre disponible.",
+            "Trabajo exacto."
+    };
+    private static final String[] ANCIENT_GUARD_ACCEPTANCES = new String[] {
+            "En ejecución.",
+            "Estado estable.",
+            "Proceso completo.",
+            "Nada falla.",
+            "Finalizado."
+    };
 
     // Lista de skins disponibles, alineada con las carpetas reales de texturas en
     // assets/emerald_warriors/textures/entity/mercenary
@@ -80,14 +186,131 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
     public EmeraldMercenaryEntity(EntityType<? extends EmeraldMercenaryEntity> type, Level level) {
         super(type, level);
         this.setPersistenceRequired();
+        this.setCanPickUpLoot(true);
+    }
+
+    @Override
+    protected void defineSynchedData(SynchedEntityData.Builder builder) {
+        super.defineSynchedData(builder);
+        builder.define(DATA_RANK_ORDINAL, MercenaryRank.RECRUIT.ordinal());
+        builder.define(DATA_ORDER_ORDINAL, MercenaryOrder.NONE.ordinal());
+    }
+
+    public MercenaryRank getRank() {
+        int ordinal = this.getEntityData().get(DATA_RANK_ORDINAL);
+        MercenaryRank[] values = MercenaryRank.values();
+        if (ordinal < 0 || ordinal >= values.length) {
+            return MercenaryRank.RECRUIT;
+        }
+        return values[ordinal];
+    }
+
+    private void setRank(MercenaryRank rank) {
+        this.rank = rank;
+        this.getEntityData().set(DATA_RANK_ORDINAL, rank.ordinal());
+    }
+
+    // === Sistema de órdenes ===
+
+    public MercenaryOrder getCurrentOrder() {
+        int ordinal = this.getEntityData().get(DATA_ORDER_ORDINAL);
+        MercenaryOrder[] values = MercenaryOrder.values();
+        if (ordinal < 0 || ordinal >= values.length) {
+            return MercenaryOrder.NONE;
+        }
+        return values[ordinal];
+    }
+
+    public void setCurrentOrder(MercenaryOrder order) {
+        this.currentOrder = order;
+        this.getEntityData().set(DATA_ORDER_ORDINAL, order.ordinal());
+
+        // Al cambiar de orden, fijar posiciones de guardia/patrulla
+        if (order == MercenaryOrder.STAY) {
+            this.guardPos = this.blockPosition();
+        } else if (order == MercenaryOrder.PATROL) {
+            this.patrolCenter = this.blockPosition();
+        }
+    }
+
+    public BlockPos getGuardPos() {
+        return this.guardPos;
+    }
+
+    public BlockPos getPatrolCenter() {
+        return this.patrolCenter;
+    }
+
+    /**
+     * Aplica los atributos del rango actual (vida, knockback resistance).
+     * Se llama al spawnear y cuando sube de rango.
+     */
+    public void applyRankAttributes() {
+        MercenaryRank r = this.getRank();
+
+        // MaxHealth
+        var healthAttr = this.getAttribute(Attributes.MAX_HEALTH);
+        if (healthAttr != null) {
+            healthAttr.setBaseValue(r.getMaxHealth());
+            // Si la vida actual es mayor a la nueva máxima, ajustar
+            if (this.getHealth() > this.getMaxHealth()) {
+                this.setHealth(this.getMaxHealth());
+            }
+            // Si está a full vida, mantenerla a full
+            if (this.getHealth() < this.getMaxHealth() && this.getHealth() == (float) this.getMaxHealth()) {
+                this.setHealth(this.getMaxHealth());
+            }
+        }
+
+        // Knockback resistance
+        var kbAttr = this.getAttribute(Attributes.KNOCKBACK_RESISTANCE);
+        if (kbAttr != null) {
+            kbAttr.setBaseValue(r.getKnockbackResistance());
+        }
+    }
+
+    @Override
+    public SpawnGroupData finalizeSpawn(ServerLevelAccessor level, DifficultyInstance difficulty, EntitySpawnReason spawnReason, SpawnGroupData spawnGroupData) {
+        SpawnGroupData data = super.finalizeSpawn(level, difficulty, spawnReason, spawnGroupData);
+
+        // Asignación de rango al spawnear (para variar tarifas/texturas).
+        // Distribución pensada para que los rangos altos sean raros.
+        int roll = this.random.nextInt(100);
+        if (roll < 55) {
+            this.setRank(MercenaryRank.RECRUIT);
+        } else if (roll < 80) {
+            this.setRank(MercenaryRank.SOLDIER);
+        } else if (roll < 93) {
+            this.setRank(MercenaryRank.SENTINEL);
+        } else if (roll < 99) {
+            this.setRank(MercenaryRank.VETERAN);
+        } else {
+            this.setRank(MercenaryRank.ANCIENT_GUARD);
+        }
+
+        // Reset para que la tarifa se calcule dentro del rango del nuevo rank.
+        this.contractEmeraldsPerService = 0;
+        this.contractDaysPerPurchase = 0;
+        this.getContractEmeraldsPerService();
+        this.getContractDaysPerPurchase();
+
+        // Aplicar stats del rango y curar a full
+        this.applyRankAttributes();
+        this.setHealth(this.getMaxHealth());
+
+        // Orden por defecto al spawnear: sin asignación
+        this.setCurrentOrder(MercenaryOrder.NONE);
+
+        return data;
     }
 
     public static AttributeSupplier.Builder createAttributes() {
         return Mob.createMobAttributes()
-                .add(Attributes.MAX_HEALTH, 24.0D)
-                .add(Attributes.ATTACK_DAMAGE, 4.0D)
+                .add(Attributes.MAX_HEALTH, 20.0D)  // Base RECRUIT, se ajusta en applyRankAttributes
+                .add(Attributes.ATTACK_DAMAGE, 1.0D)
                 .add(Attributes.MOVEMENT_SPEED, 0.3D)
-                .add(Attributes.FOLLOW_RANGE, 32.0D);
+                .add(Attributes.FOLLOW_RANGE, 32.0D)
+                .add(Attributes.KNOCKBACK_RESISTANCE, 0.0D);  // Base, se ajusta por rango
     }
 
     @Override
@@ -106,8 +329,29 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
             output.putInt("ContractTicks", this.contractTicksRemaining);
         }
 
+        output.putString("MercenaryRank", this.getRank().name());
+        if (this.contractEmeraldsPerService > 0) {
+            output.putInt("ContractRate", this.contractEmeraldsPerService);
+        }
+        if (this.contractDaysPerPurchase > 0) {
+            output.putInt("ContractDaysPerPurchase", this.contractDaysPerPurchase);
+        }
+
         output.putInt("MercenaryXp", this.experience);
         output.putInt("MercenaryMaxXp", this.maxExperience);
+
+        // Orden actual
+        output.putString("MercenaryOrder", this.getCurrentOrder().name());
+        if (this.guardPos != null) {
+            output.putInt("GuardPosX", this.guardPos.getX());
+            output.putInt("GuardPosY", this.guardPos.getY());
+            output.putInt("GuardPosZ", this.guardPos.getZ());
+        }
+        if (this.patrolCenter != null) {
+            output.putInt("PatrolCenterX", this.patrolCenter.getX());
+            output.putInt("PatrolCenterY", this.patrolCenter.getY());
+            output.putInt("PatrolCenterZ", this.patrolCenter.getZ());
+        }
     }
 
     @Override
@@ -126,29 +370,193 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
 
         this.contractTicksRemaining = input.getIntOr("ContractTicks", this.contractTicksRemaining);
 
+        input.getString("MercenaryRank").ifPresent(value -> {
+            try {
+                this.setRank(MercenaryRank.valueOf(value));
+            } catch (IllegalArgumentException ignored) {
+                this.setRank(MercenaryRank.RECRUIT);
+            }
+        });
+        this.contractEmeraldsPerService = input.getIntOr("ContractRate", this.contractEmeraldsPerService);
+        this.contractDaysPerPurchase = input.getIntOr("ContractDaysPerPurchase", this.contractDaysPerPurchase);
+
         this.experience = input.getIntOr("MercenaryXp", this.experience);
         this.maxExperience = input.getIntOr("MercenaryMaxXp", this.maxExperience);
+
+        if (this.ownerUuid == null) {
+            this.contractTicksRemaining = 0;
+        }
+
+        // Forzar pickup después de cargar NBT (Mob.readAdditionalSaveData lo sobreescribe a false por defecto)
+        this.setCanPickUpLoot(true);
+
+        // Orden
+        input.getString("MercenaryOrder").ifPresent(value -> {
+            try {
+                this.currentOrder = MercenaryOrder.valueOf(value);
+                this.getEntityData().set(DATA_ORDER_ORDINAL, this.currentOrder.ordinal());
+            } catch (IllegalArgumentException ignored) {
+                this.setCurrentOrder(MercenaryOrder.NONE);
+            }
+        });
+
+        // Posiciones de guardia/patrulla
+        int gx = input.getIntOr("GuardPosX", Integer.MIN_VALUE);
+        int gy = input.getIntOr("GuardPosY", Integer.MIN_VALUE);
+        int gz = input.getIntOr("GuardPosZ", Integer.MIN_VALUE);
+        if (gx != Integer.MIN_VALUE && gy != Integer.MIN_VALUE && gz != Integer.MIN_VALUE) {
+            this.guardPos = new BlockPos(gx, gy, gz);
+        }
+
+        int px = input.getIntOr("PatrolCenterX", Integer.MIN_VALUE);
+        int py = input.getIntOr("PatrolCenterY", Integer.MIN_VALUE);
+        int pz = input.getIntOr("PatrolCenterZ", Integer.MIN_VALUE);
+        if (px != Integer.MIN_VALUE && py != Integer.MIN_VALUE && pz != Integer.MIN_VALUE) {
+            this.patrolCenter = new BlockPos(px, py, pz);
+        }
+
+        // Aplicar stats del rango después de cargar
+        this.applyRankAttributes();
+    }
+
+    private static int minContractRate(MercenaryRank rank) {
+        return switch (rank) {
+            case RECRUIT -> 1;
+            case SOLDIER -> 5;
+            case SENTINEL -> 9;
+            case VETERAN -> 17;
+            case ANCIENT_GUARD -> 25;
+        };
+    }
+
+    private static int maxContractRate(MercenaryRank rank) {
+        return switch (rank) {
+            case RECRUIT -> 4;
+            case SOLDIER -> 8;
+            case SENTINEL -> 16;
+            case VETERAN -> 24;
+            case ANCIENT_GUARD -> 32;
+        };
+    }
+
+    private static int minContractDays(MercenaryRank rank) {
+        return switch (rank) {
+            case RECRUIT -> 1;
+            case SOLDIER -> 2;
+            case SENTINEL -> 3;
+            case VETERAN -> 5;
+            case ANCIENT_GUARD -> 7;
+        };
+    }
+
+    private static int maxContractDays(MercenaryRank rank) {
+        return switch (rank) {
+            case RECRUIT -> 3;
+            case SOLDIER -> 4;
+            case SENTINEL -> 6;
+            case VETERAN -> 8;
+            case ANCIENT_GUARD -> 10;
+        };
+    }
+
+    private int getContractEmeraldsPerService() {
+        MercenaryRank rank = this.getRank();
+        int min = minContractRate(rank);
+        int max = maxContractRate(rank);
+
+        if (this.contractEmeraldsPerService <= 0
+                || this.contractEmeraldsPerService < min
+                || this.contractEmeraldsPerService > max) {
+            int span = Math.max(1, (max - min) + 1);
+            long least = this.getUUID().getLeastSignificantBits();
+            int base = (int) (least ^ (least >>> 32));
+            if (base == Integer.MIN_VALUE) {
+                base = 0;
+            }
+            base = Math.abs(base);
+            this.contractEmeraldsPerService = min + (base % span);
+        }
+
+        return this.contractEmeraldsPerService;
+    }
+
+    private int getContractDaysPerPurchase() {
+        MercenaryRank rank = this.getRank();
+        int min = minContractDays(rank);
+        int max = maxContractDays(rank);
+
+        if (this.contractDaysPerPurchase <= 0
+                || this.contractDaysPerPurchase < min
+                || this.contractDaysPerPurchase > max) {
+            int span = Math.max(1, (max - min) + 1);
+            long most = this.getUUID().getMostSignificantBits();
+            int base = (int) (most ^ (most >>> 32));
+            if (base == Integer.MIN_VALUE) {
+                base = 0;
+            }
+            base = Math.abs(base);
+            this.contractDaysPerPurchase = min + (base % span);
+        }
+
+        return this.contractDaysPerPurchase;
+    }
+
+    private String randomProposal() {
+        String[] options = switch (this.getRank()) {
+            case RECRUIT -> RECRUIT_PROPOSALS;
+            case SOLDIER -> SOLDIER_PROPOSALS;
+            case SENTINEL -> SENTINEL_PROPOSALS;
+            case VETERAN -> VETERAN_PROPOSALS;
+            case ANCIENT_GUARD -> ANCIENT_GUARD_PROPOSALS;
+        };
+        return options[this.random.nextInt(options.length)];
+    }
+
+    private String randomAcceptance() {
+        String[] options = switch (this.getRank()) {
+            case RECRUIT -> RECRUIT_ACCEPTANCES;
+            case SOLDIER -> SOLDIER_ACCEPTANCES;
+            case SENTINEL -> SENTINEL_ACCEPTANCES;
+            case VETERAN -> VETERAN_ACCEPTANCES;
+            case ANCIENT_GUARD -> ANCIENT_GUARD_ACCEPTANCES;
+        };
+        return options[this.random.nextInt(options.length)];
     }
 
     @Override
     protected void registerGoals() {
-        // Prioridad 0: Supervivencia
+        // Prioridad 0: Supervivencia básica
         this.goalSelector.addGoal(0, new FloatGoal(this));
+
+        // Prioridad 0: Levantar escudo contra creepers a punto de explotar
+        this.goalSelector.addGoal(0, new ShieldAgainstCreeperGoal(this, 6.0D));
+
+        // Prioridad 1: Retirarse con poca vida (todos los rangos)
+        this.goalSelector.addGoal(1, new RetreatLowHpGoal(this, 1.2D));
 
         // Prioridad 2: Ataque cuerpo a cuerpo (con animación de swing)
         this.meleeAttackGoal = new EmeraldMeleeAttackGoal(this, 1.2D, true);
 
-        // Prioridad 5: Seguir al dueño
-        this.goalSelector.addGoal(5, new EmeraldFollowOwnerGoal(this, 1.0D, 5.0F, 2.0F));
+        // Prioridad 3: Movimiento según orden
+        this.goalSelector.addGoal(3, new EmeraldFollowOwnerGoal(this, 1.0D, 5.0F, 2.0F));
+        this.goalSelector.addGoal(3, new GuardPositionGoal(this, 1.0D, 8.0D));
+
+        // Prioridad 4: Patrullar zona (solo en orden PATROL)
+        this.goalSelector.addGoal(4, new PatrolAroundPointGoal(this, 0.9D));
 
         // Prioridad 8-10: Comportamiento idle
         this.goalSelector.addGoal(8, new LookAtPlayerGoal(this, Player.class, 8.0F));
         this.goalSelector.addGoal(9, new RandomLookAroundGoal(this));
         this.goalSelector.addGoal(10, new WaterAvoidingRandomStrollGoal(this, 1.0D));
 
-        // Target goals
-        this.targetSelector.addGoal(1, new HurtByTargetGoal(this));
-        this.targetSelector.addGoal(2, new EmeraldProtectOwnerGoal(this));
+        // Target goals (prioridad de objetivos según diseño)
+        // 0: Mob que está pegando al dueño ahora mismo
+        this.targetSelector.addGoal(0, new EmeraldProtectOwnerGoal(this));
+        // 1: Mob/jugador que el dueño haya golpeado recientemente
+        this.targetSelector.addGoal(1, new OwnerHurtTargetGoal(this));
+        // 2: Mob que está pegando al mercenario (autodefensa)
+        this.targetSelector.addGoal(2, new HurtByTargetGoal(this));
+        // 3: Hostil más cercano dentro del radio de detección
         this.targetSelector.addGoal(3, new NearestAttackableTargetGoal<>(this, Monster.class, true));
 
         this.refreshCombatRoleAndGoals();
@@ -233,16 +641,234 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
     public void tick() {
         super.tick();
         if (!this.level().isClientSide()) {
+            if (this.ownerUuid == null && this.contractTicksRemaining > 0) {
+                this.contractTicksRemaining = 0;
+            }
             if (this.contractTicksRemaining > 0 && this.ownerUuid != null) {
                 this.contractTicksRemaining--;
                 if (this.contractTicksRemaining == 0) {
                     this.onContractExpired();
                 }
             }
+
+            // Mantener la atención y detener el movimiento mientras dura la oferta de contrato
+            if (this.attentionTicks > 0 && this.attentionPlayer != null) {
+                // Forzar parada cada tick para que ningún goal nos mueva
+                this.getNavigation().stop();
+                Player p = this.level().getPlayerByUUID(this.attentionPlayer);
+                if (p != null) {
+                    this.getLookControl().setLookAt(p, 30.0F, this.getMaxHeadXRot());
+                }
+                this.attentionTicks--;
+                if (this.attentionTicks <= 0) {
+                    this.attentionPlayer = null;
+                }
+            }
+
             if (this.tickCount % 20 == 0) {
                 this.refreshCombatRoleAndGoals();
             }
         }
+    }
+
+    @Override
+    public void aiStep() {
+        super.aiStep();
+
+        if (!(this.level() instanceof ServerLevel serverLevel)) {
+            return;
+        }
+
+        if (this.tickCount % 5 != 0) {
+            return;
+        }
+
+        if (!this.isAlive()) {
+            return;
+        }
+
+        Vec3i reach = this.getPickupReach();
+        for (ItemEntity itemEntity : this.level().getEntitiesOfClass(
+                ItemEntity.class,
+                this.getBoundingBox().inflate(reach.getX(), reach.getY(), reach.getZ())
+        )) {
+            if (!itemEntity.isAlive() || itemEntity.hasPickUpDelay()) {
+                continue;
+            }
+            ItemStack stack = itemEntity.getItem();
+            if (stack.isEmpty()) {
+                continue;
+            }
+            if (!this.wantsToPickUp(serverLevel, stack)) {
+                continue;
+            }
+            this.pickUpItem(serverLevel, itemEntity);
+        }
+    }
+
+    @Override
+    public boolean wantsToPickUp(ServerLevel level, ItemStack stack) {
+        return true;
+    }
+
+    private ItemStack addToBag(ItemStack stack) {
+        if (stack.isEmpty()) {
+            return stack;
+        }
+
+        for (int i = MercenaryInventory.SLOT_BAG_START; i < MercenaryInventory.SIZE; i++) {
+            ItemStack existing = this.mercenaryInventory.getItem(i);
+            if (existing.isEmpty()) {
+                continue;
+            }
+            if (!ItemStack.isSameItemSameComponents(existing, stack)) {
+                continue;
+            }
+            int space = existing.getMaxStackSize() - existing.getCount();
+            if (space <= 0) {
+                continue;
+            }
+            int toMove = Math.min(space, stack.getCount());
+            if (toMove > 0) {
+                existing.grow(toMove);
+                stack.shrink(toMove);
+                this.mercenaryInventory.setChanged();
+                if (stack.isEmpty()) {
+                    return ItemStack.EMPTY;
+                }
+            }
+        }
+
+        for (int i = MercenaryInventory.SLOT_BAG_START; i < MercenaryInventory.SIZE; i++) {
+            ItemStack existing = this.mercenaryInventory.getItem(i);
+            if (!existing.isEmpty()) {
+                continue;
+            }
+            this.mercenaryInventory.setItem(i, stack);
+            this.mercenaryInventory.setChanged();
+            return ItemStack.EMPTY;
+        }
+
+        return stack;
+    }
+
+    @Override
+    protected void pickUpItem(ServerLevel level, ItemEntity itemEntity) {
+        ItemStack stack = itemEntity.getItem().copy();
+        if (stack.isEmpty()) {
+            return;
+        }
+
+        int before = stack.getCount();
+        ItemStack remaining = this.addToBag(stack);
+
+        int picked = before - remaining.getCount();
+        if (picked <= 0) {
+            return;
+        }
+
+        this.take(itemEntity, picked);
+
+        if (remaining.isEmpty()) {
+            itemEntity.discard();
+        } else {
+            itemEntity.setItem(remaining);
+        }
+    }
+
+    // === Ganar EXP al matar sin modificar el daño base ===
+
+    @Override
+    public boolean doHurtTarget(ServerLevel level, net.minecraft.world.entity.Entity target) {
+        boolean result = super.doHurtTarget(level, target);
+
+        // Ganar EXP si el objetivo murió
+        if (result && target instanceof LivingEntity living && !living.isAlive()) {
+            this.addExperience(getExpForKill(living));
+        }
+
+        return result;
+    }
+
+    private static int getExpForKill(LivingEntity target) {
+        if (target instanceof Monster) {
+            return 5;
+        }
+        if (target instanceof Player) {
+            return 15;
+        }
+        // Neutrales, etc.
+        return 3;
+    }
+
+    // === Sistema de EXP y subida de rango ===
+
+    public void addExperience(int amount) {
+        if (amount <= 0) {
+            return;
+        }
+        // No subir de rango si ya es ANCIENT_GUARD
+        if (this.getRank() == MercenaryRank.ANCIENT_GUARD) {
+            return;
+        }
+
+        this.experience += amount;
+
+        while (this.experience >= this.maxExperience && this.getRank() != MercenaryRank.ANCIENT_GUARD) {
+            this.experience -= this.maxExperience;
+            this.rankUp();
+        }
+
+        // Tope de exp si ya es rango máximo
+        if (this.getRank() == MercenaryRank.ANCIENT_GUARD) {
+            this.experience = Math.min(this.experience, this.maxExperience);
+        }
+    }
+
+    private void rankUp() {
+        MercenaryRank current = this.getRank();
+        MercenaryRank[] ranks = MercenaryRank.values();
+        int nextOrdinal = current.ordinal() + 1;
+
+        if (nextOrdinal >= ranks.length) {
+            return;
+        }
+
+        MercenaryRank newRank = ranks[nextOrdinal];
+        this.setRank(newRank);
+
+        // Escalar maxExperience para el siguiente rango
+        this.maxExperience = getMaxExpForRank(newRank);
+
+        // Aplicar nuevos stats y curar a full
+        this.applyRankAttributes();
+        this.setHealth(this.getMaxHealth());
+
+        // Efecto visual de corazones (como al domesticar)
+        this.level().broadcastEntityEvent(this, (byte) 7);
+
+        // Notificar al dueño
+        LivingEntity owner = this.getOwner();
+        if (owner instanceof Player player) {
+            String rankName = switch (newRank) {
+                case RECRUIT -> "Recluta";
+                case SOLDIER -> "Soldado";
+                case SENTINEL -> "Centinela";
+                case VETERAN -> "Veterano";
+                case ANCIENT_GUARD -> "Guardia Ancestral";
+            };
+            this.sendContractInfo(player, "¡Ascenso a " + rankName + "!");
+        }
+    }
+
+    private static int getMaxExpForRank(MercenaryRank rank) {
+        return switch (rank) {
+            case RECRUIT -> 100;
+            case SOLDIER -> 200;
+            case SENTINEL -> 350;
+            case VETERAN -> 550;
+            case ANCIENT_GUARD -> 800;
+        };
     }
 
     private void onContractExpired() {
@@ -258,6 +884,25 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
             Component message = Component.literal("\"" + body + "\"")
                     .withStyle(ChatFormatting.GRAY, ChatFormatting.ITALIC);
             serverPlayer.sendSystemMessage(prefix.copy().append(message));
+        }
+    }
+
+    private void sendContractInfo(Player player, String body) {
+        if (player instanceof ServerPlayer serverPlayer) {
+            Component prefix = Component.literal("[Contrato] ")
+                    .withStyle(ChatFormatting.GOLD);
+            Component message = Component.literal(body)
+                    .withStyle(ChatFormatting.GRAY);
+            serverPlayer.sendSystemMessage(prefix.copy().append(message));
+        }
+    }
+
+    private void sendOrderOverlay(Player player, MercenaryOrder order) {
+        if (player instanceof ServerPlayer serverPlayer) {
+            Component message = Component.literal("Orden: " + order.getDisplayName())
+                    .withStyle(ChatFormatting.WHITE);
+            // true = mostrar en la barra de acción (sobre la hotbar), no en el chat
+            serverPlayer.displayClientMessage(message, true);
         }
     }
 
@@ -277,7 +922,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
                     case 1 -> (int) Math.ceil(self.getMaxHealth());
                     case 2 -> self.getExperience();
                     case 3 -> self.getMaxExperience();
-                    case 4 -> self.rank.ordinal();
+                    case 4 -> self.getRank().ordinal();
                     default -> 0;
                 };
             }
@@ -310,15 +955,36 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
     public InteractionResult mobInteract(Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
         boolean isSneaking = player.isShiftKeyDown();
+        boolean isAdmin = player.getAbilities().instabuild;
 
-        // Shift + clic derecho con esmeraldas → sistema de contrato
-        if (isSneaking && stack.is(Items.EMERALD)) {
+        // Clic derecho con esmeraldas → sistema de contrato
+        if (stack.is(Items.EMERALD)) {
+            // Si ya está contratado, por ahora NO permitimos renovar/añadir tiempo.
+            // En creativo lo dejamos pasar para abrir GUI, pero no para comprar más días.
+            if (this.ownerUuid != null) {
+                if (!this.level().isClientSide()) {
+                    if (this.ownerUuid.equals(player.getUUID()) || isAdmin) {
+                        if (player instanceof ServerPlayer serverPlayer) {
+                            this.openInventoryFor(serverPlayer);
+                        }
+                    } else {
+                        this.sendContractInfo(player, "Ya tengo contrato.");
+                    }
+                }
+                return this.level().isClientSide() ? InteractionResult.SUCCESS : InteractionResult.CONSUME;
+            }
+
             // No permitimos que otro jugador compre el mercenario de su dueño actual
-            if (this.ownerUuid != null && !this.ownerUuid.equals(player.getUUID())) {
-                return super.mobInteract(player, hand);
+            if (!isAdmin && this.ownerUuid != null && !this.ownerUuid.equals(player.getUUID())) {
+                if (!this.level().isClientSide()) {
+                    this.sendContractInfo(player, "Ya tengo contrato.");
+                }
+                return this.level().isClientSide() ? InteractionResult.SUCCESS : InteractionResult.CONSUME;
             }
 
             if (!this.level().isClientSide()) {
+                int rate = this.getContractEmeraldsPerService();
+                int daysPerPurchase = this.getContractDaysPerPurchase();
                 // Caso 1: sin dueño → flujo de dos pasos
                 if (this.ownerUuid == null) {
                     boolean samePlayer = this.pendingContractPlayer != null && this.pendingContractPlayer.equals(player.getUUID());
@@ -328,40 +994,54 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
                         // Primer clic: mensaje inmersivo de tarifa
                         this.pendingContractPlayer = player.getUUID();
                         this.pendingContractTick = this.tickCount;
-                        this.sendMercenaryMessage(player,
-                                "Una esmeralda por cada jornada. Esa es mi tarifa.");
+
+                        // Prestar atención al jugador que hace la oferta durante unos segundos
+                        this.getNavigation().stop();
+                        this.setTarget(null);
+                        this.attentionPlayer = player.getUUID();
+                        this.attentionTicks = 100; // ~5 segundos a 20 tps
+
+                        this.sendMercenaryMessage(player, this.randomProposal());
+                        this.sendContractInfo(player,
+                                "Tarifa: " + rate + " esmeralda" + (rate == 1 ? "" : "s")
+                                        + " por " + daysPerPurchase + " día" + (daysPerPurchase == 1 ? "" : "s") + " de servicio.");
                     } else {
                         // Segundo clic → contratar
-                        int days = stack.getCount();
-                        if (days <= 0) {
-                            this.sendMercenaryMessage(player,
-                                    "No veo nada en tu mano que me convenza.");
+                        int offered = stack.getCount();
+                        if (offered < rate) {
+                            this.sendContractInfo(player, "Faltan esmeraldas.");
                         } else {
+                            int toConsume = rate;
                             if (!player.getAbilities().instabuild) {
-                                stack.shrink(days);
+                                stack.shrink(toConsume);
                             }
                             this.setOwner(player);
-                            this.addContractDays(days);
+                            this.setCurrentOrder(MercenaryOrder.FOLLOW);
+                            this.addContractDays(daysPerPurchase);
                             this.getNavigation().stop();
                             this.setTarget(null);
                             this.level().broadcastEntityEvent(this, (byte) 7);
-                            this.sendMercenaryMessage(player,
-                                    "Trato hecho. " + days + " jornada" + (days == 1 ? "" : "s") + " a tu servicio.");
+                            this.sendMercenaryMessage(player, this.randomAcceptance());
+                            this.sendContractInfo(player,
+                                    "+" + daysPerPurchase + " día" + (daysPerPurchase == 1 ? "" : "s") + " de servicio.");
+                            this.pendingContractPlayer = null;
                         }
-                        this.pendingContractPlayer = null;
-                    }
-                } else {
-                    // Caso 2: ya eres el dueño → extender contrato
-                    int days = stack.getCount();
-                    if (days > 0) {
-                        if (!player.getAbilities().instabuild) {
-                            stack.shrink(days);
-                        }
-                        this.addContractDays(days);
-                        this.sendMercenaryMessage(player,
-                                days + " jornada" + (days == 1 ? "" : "s") + " más. Seguiré contigo.");
                     }
                 }
+            }
+            return this.level().isClientSide() ? InteractionResult.SUCCESS : InteractionResult.CONSUME;
+        }
+
+        // Shift + clic derecho → ciclar orden (solo dueño o admin)
+        // Solo procesar MAIN_HAND para evitar doble ejecución
+        if (isSneaking && hand == InteractionHand.MAIN_HAND && this.ownerUuid != null) {
+            boolean isOwner = this.ownerUuid.equals(player.getUUID());
+            if ((isOwner || isAdmin) && !this.level().isClientSide()) {
+                MercenaryOrder next = this.getCurrentOrder().next();
+                this.setCurrentOrder(next);
+                this.getNavigation().stop();
+                this.setTarget(null);
+                this.sendOrderOverlay(player, next);
             }
             return this.level().isClientSide() ? InteractionResult.SUCCESS : InteractionResult.CONSUME;
         }
@@ -374,11 +1054,17 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
                         this.openInventoryFor(serverPlayer);
                     }
                     return InteractionResult.CONSUME;
+                } else if (isAdmin && this.ownerUuid != null) {
+                    if (player instanceof ServerPlayer serverPlayer) {
+                        this.openInventoryFor(serverPlayer);
+                    }
+                    return InteractionResult.CONSUME;
                 } else if (this.ownerUuid == null) {
                     this.sendMercenaryMessage(player,
                             "No trabajo sin contrato.");
                     return InteractionResult.CONSUME;
                 } else {
+                    this.sendContractInfo(player, "Ya tengo contrato.");
                     return InteractionResult.CONSUME;
                 }
             }
@@ -410,7 +1096,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
      * Más adelante lo ligaremos al sistema real de rangos.
      */
     public String getRankTextureSuffix() {
-        return this.rank.getTextureSuffix();
+        return this.getRank().getTextureSuffix();
     }
 
 }

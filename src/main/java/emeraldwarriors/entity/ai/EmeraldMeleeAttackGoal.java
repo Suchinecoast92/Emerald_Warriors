@@ -1,12 +1,15 @@
 package emeraldwarriors.entity.ai;
 
 import emeraldwarriors.entity.EmeraldMercenaryEntity;
+import emeraldwarriors.mercenary.MercenaryOrder;
 import emeraldwarriors.mercenary.MercenaryRole;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.EntitySelector;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.pathfinder.Path;
 
@@ -39,7 +42,7 @@ public class EmeraldMeleeAttackGoal extends Goal {
     @Override
     public boolean canUse() {
         long gameTime = this.mob.level().getGameTime();
-        if (gameTime - this.lastCanUseCheck < 20L) {
+        if (gameTime - this.lastCanUseCheck < 4L) {
             return false;
         }
         this.lastCanUseCheck = gameTime;
@@ -65,7 +68,41 @@ public class EmeraldMeleeAttackGoal extends Goal {
         if (!this.followingTargetEvenIfNotSeen) {
             return !this.mob.getNavigation().isDone();
         }
+
+        // Límite de persecución: no alejarse demasiado del ancla
+        if (isTooFarFromAnchor()) {
+            return false;
+        }
+
         return !(target instanceof Player) || !target.isSpectator() && !((Player) target).isCreative();
+    }
+
+    private boolean isTooFarFromAnchor() {
+        int maxChase = this.mob.getRank().getMaxChaseFromAnchor();
+        double maxChaseSqr = (double) maxChase * maxChase;
+
+        MercenaryOrder order = this.mob.getCurrentOrder();
+        switch (order) {
+            case STAY -> {
+                // En STAY dejamos que persiga libremente; luego GuardPositionGoal lo devuelve al punto.
+                return false;
+            }
+            case PATROL -> {
+                BlockPos center = this.mob.getPatrolCenter();
+                if (center != null) {
+                    double dist = this.mob.distanceToSqr(center.getX() + 0.5, center.getY(), center.getZ() + 0.5);
+                    return dist > maxChaseSqr;
+                }
+            }
+            default -> {
+                // FOLLOW / NONE: ancla = dueño
+                LivingEntity owner = this.mob.getOwner();
+                if (owner != null) {
+                    return this.mob.distanceToSqr(owner) > maxChaseSqr;
+                }
+            }
+        }
+        return false;
     }
 
     @Override
@@ -102,7 +139,14 @@ public class EmeraldMeleeAttackGoal extends Goal {
         double distanceSqr = this.mob.distanceToSqr(target.getX(), target.getY(), target.getZ());
         this.ticksUntilNextPathRecalculation = Math.max(this.ticksUntilNextPathRecalculation - 1, 0);
 
-        if ((this.followingTargetEvenIfNotSeen || this.mob.getSensing().hasLineOfSight(target))
+        // Contra creepers: no acercarse más allá del alcance de ataque para evitar
+        // que la explosión lance al mercenario por los aires.
+        boolean isCreeper = target instanceof Creeper;
+        double attackReach = this.getAttackReachSqr(target);
+        boolean closeEnoughToCreeper = isCreeper && distanceSqr <= attackReach * 1.3;
+
+        if (!closeEnoughToCreeper
+                && (this.followingTargetEvenIfNotSeen || this.mob.getSensing().hasLineOfSight(target))
                 && this.ticksUntilNextPathRecalculation <= 0
                 && (this.pathedTargetX == 0.0D && this.pathedTargetY == 0.0D && this.pathedTargetZ == 0.0D
                 || target.distanceToSqr(this.pathedTargetX, this.pathedTargetY, this.pathedTargetZ) >= 1.0D
@@ -123,6 +167,9 @@ public class EmeraldMeleeAttackGoal extends Goal {
             }
 
             this.ticksUntilNextPathRecalculation = this.adjustedTickDelay(this.ticksUntilNextPathRecalculation);
+        } else if (closeEnoughToCreeper) {
+            // Ya estamos lo suficientemente cerca del creeper, dejar de acercarse
+            this.mob.getNavigation().stop();
         }
 
         this.ticksUntilNextAttack = Math.max(this.ticksUntilNextAttack - 1, 0);
