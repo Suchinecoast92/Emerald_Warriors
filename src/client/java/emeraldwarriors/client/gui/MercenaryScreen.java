@@ -1,11 +1,14 @@
 package emeraldwarriors.client.gui;
 
+import emeraldwarriors.entity.EmeraldMercenaryEntity;
 import emeraldwarriors.inventory.MercenaryMenu;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.Slot;
 
@@ -101,8 +104,23 @@ public class MercenaryScreen extends AbstractContainerScreen<MercenaryMenu> {
 
         // Fila de corazones
         int heartsY = 18;
+
+        // Valores base desde ContainerData sincronizado por el servidor
         int health = this.menu.getMercHealth();
         int maxHealth = this.menu.getMercMaxHealth();
+
+        // Intentar usar la entidad cliente para reflejar la vida en tiempo real
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level != null) {
+            int entityId = this.menu.getMercEntityId();
+            if (entityId != 0) {
+                Entity e = minecraft.level.getEntity(entityId);
+                if (e instanceof EmeraldMercenaryEntity merc) {
+                    health = (int) Math.ceil(merc.getHealth());
+                    maxHealth = (int) Math.ceil(merc.getMaxHealth());
+                }
+            }
+        }
         if (maxHealth <= 0) {
             maxHealth = 1;
         }

@@ -78,12 +78,30 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
 
         super.extractRenderState(entity, state, partialTick);
 
-        // === Forzar pose de bloqueo con escudo ===
-        // Cuando el mercenario está "usando" un escudo (ShieldAgainstCreeperGoal startUsingItem),
-        // nos aseguramos de que el brazo correspondiente use la pose BLOCK para que el escudo
-        // se vea al frente como en Alex.
+        // === Forzar poses de uso de items ===
         if (entity.isUsingItem()) {
             InteractionHand usedHand = entity.getUsedItemHand();
+            net.minecraft.world.item.ItemStack usedItem = entity.getItemInHand(usedHand);
+
+            // Arco: pose BOW_AND_ARROW + datos de carga para la animación
+            if (usedItem.getItem() instanceof net.minecraft.world.item.BowItem) {
+                state.isUsingItem = true;
+                state.useItemHand = usedHand;
+                state.ticksUsingItem = entity.getTicksUsingItem() + partialTick;
+                if (usedHand == InteractionHand.MAIN_HAND) {
+                    if (state.mainArm == HumanoidArm.RIGHT) {
+                        state.rightArmPose = HumanoidModel.ArmPose.BOW_AND_ARROW;
+                    } else {
+                        state.leftArmPose = HumanoidModel.ArmPose.BOW_AND_ARROW;
+                    }
+                } else {
+                    if (state.mainArm == HumanoidArm.RIGHT) {
+                        state.leftArmPose = HumanoidModel.ArmPose.BOW_AND_ARROW;
+                    } else {
+                        state.rightArmPose = HumanoidModel.ArmPose.BOW_AND_ARROW;
+                    }
+                }
+            }
 
             // Escudo en mano principal
             if (usedHand == InteractionHand.MAIN_HAND && entity.getMainHandItem().is(Items.SHIELD)) {
@@ -97,7 +115,6 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
             // Escudo en offhand (caso típico: espada mano principal, escudo en la otra)
             if (usedHand == InteractionHand.OFF_HAND && entity.getOffhandItem().is(Items.SHIELD)) {
                 if (state.mainArm == HumanoidArm.RIGHT) {
-                    // Main RIGHT -> escudo está en brazo izquierdo
                     state.leftArmPose = HumanoidModel.ArmPose.BLOCK;
                 } else {
                     state.rightArmPose = HumanoidModel.ArmPose.BLOCK;

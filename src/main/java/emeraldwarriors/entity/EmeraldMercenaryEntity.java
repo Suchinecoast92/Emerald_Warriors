@@ -1,5 +1,6 @@
 package emeraldwarriors.entity;
 
+import emeraldwarriors.entity.ai.EmeraldBowAttackGoal;
 import emeraldwarriors.entity.ai.EmeraldFollowOwnerGoal;
 import emeraldwarriors.entity.ai.EmeraldMeleeAttackGoal;
 import emeraldwarriors.entity.ai.EmeraldProtectOwnerGoal;
@@ -42,10 +43,12 @@ import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
 import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.entity.monster.RangedAttackMob;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerData;
+import net.minecraft.world.item.ArrowItem;
 import net.minecraft.world.item.BowItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -54,9 +57,14 @@ import net.minecraft.world.level.ServerLevelAccessor;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.entity.projectile.ProjectileUtil;
+
 import java.util.UUID;
 
-public class EmeraldMercenaryEntity extends PathfinderMob {
+public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttackMob {
 
     private static final int TICKS_PER_DAY = 24000;
     private static final int CONTRACT_OFFER_TIMEOUT_TICKS = 200; // ~10 segundos
@@ -67,6 +75,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
     private MercenaryRole currentRole = MercenaryRole.NONE;
 
     private EmeraldMeleeAttackGoal meleeAttackGoal;
+    private EmeraldBowAttackGoal bowAttackGoal;
+
+    private MercenaryRole lastAppliedRole = null;
+    private Boolean lastAppliedHasArrows = null;
 
     // Dueño y apariencia básica
     private UUID ownerUuid;
@@ -88,6 +100,11 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
     // Atención temporal al jugador tras la oferta de contrato
     private UUID attentionPlayer;
     private int attentionTicks;
+
+    // Ticks restantes durante los que intentará mantener el escudo arriba
+    private int reactiveShieldTicks;
+
+    private DamageSource lastReactiveDamageSource;
 
     // Inventario persistente del mercenario (equipo + mochila)
     private final MercenaryInventory mercenaryInventory = new MercenaryInventory(this);
@@ -352,6 +369,13 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
             output.putInt("PatrolCenterY", this.patrolCenter.getY());
             output.putInt("PatrolCenterZ", this.patrolCenter.getZ());
         }
+
+        for (int i = MercenaryInventory.SLOT_BAG_START; i < MercenaryInventory.SIZE; i++) {
+            ItemStack stack = this.mercenaryInventory.getItem(i);
+            if (!stack.isEmpty()) {
+                output.store("InvSlot" + i, ItemStack.CODEC, stack);
+            }
+        }
     }
 
     @Override
@@ -417,6 +441,20 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
 
         // Aplicar stats del rango después de cargar
         this.applyRankAttributes();
+
+        this.mercenaryInventory.setItem(MercenaryInventory.SLOT_MAIN_HAND, this.getMainHandItem());
+        this.mercenaryInventory.setItem(MercenaryInventory.SLOT_OFF_HAND, this.getOffhandItem());
+        this.mercenaryInventory.setItem(MercenaryInventory.SLOT_HELMET, this.getItemBySlot(EquipmentSlot.HEAD));
+        this.mercenaryInventory.setItem(MercenaryInventory.SLOT_CHESTPLATE, this.getItemBySlot(EquipmentSlot.CHEST));
+        this.mercenaryInventory.setItem(MercenaryInventory.SLOT_LEGGINGS, this.getItemBySlot(EquipmentSlot.LEGS));
+        this.mercenaryInventory.setItem(MercenaryInventory.SLOT_BOOTS, this.getItemBySlot(EquipmentSlot.FEET));
+
+        for (int i = MercenaryInventory.SLOT_BAG_START; i < MercenaryInventory.SIZE; i++) {
+            var opt = input.read("InvSlot" + i, ItemStack.CODEC);
+            if (opt.isPresent()) {
+                this.mercenaryInventory.setItem(i, opt.get());
+            }
+        }
     }
 
     private static int minContractRate(MercenaryRank rank) {
@@ -535,7 +573,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
         this.goalSelector.addGoal(1, new RetreatLowHpGoal(this, 1.2D));
 
         // Prioridad 2: Ataque cuerpo a cuerpo (con animación de swing)
-        this.meleeAttackGoal = new EmeraldMeleeAttackGoal(this, 1.2D, true);
+        this.meleeAttackGoal = new EmeraldMeleeAttackGoal(this, 1.1D, true);
+        this.bowAttackGoal = new EmeraldBowAttackGoal(this, 0.9D, 20, 15.0F);
 
         // Prioridad 3: Movimiento según orden
         this.goalSelector.addGoal(3, new EmeraldFollowOwnerGoal(this, 1.0D, 5.0F, 2.0F));
@@ -559,7 +598,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
         // 3: Hostil más cercano dentro del radio de detección
         this.targetSelector.addGoal(3, new NearestAttackableTargetGoal<>(this, Monster.class, true));
 
-        this.refreshCombatRoleAndGoals();
+        if (this.meleeAttackGoal != null) {
+            this.goalSelector.addGoal(4, this.meleeAttackGoal);
+        }
     }
 
     public MercenaryRole getCurrentRole() {
@@ -603,6 +644,50 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
         this.maxExperience = maxExperience;
     }
 
+    private int findArrowSlotInBag() {
+        int normalIndex = -1;
+        for (int i = MercenaryInventory.SLOT_BAG_START; i < MercenaryInventory.SIZE; i++) {
+            ItemStack stack = this.mercenaryInventory.getItem(i);
+            if (stack.isEmpty()) {
+                continue;
+            }
+            if (!(stack.getItem() instanceof ArrowItem)) {
+                continue;
+            }
+            if (stack.is(Items.TIPPED_ARROW) || stack.is(Items.SPECTRAL_ARROW)) {
+                return i;
+            }
+            if (normalIndex == -1) {
+                normalIndex = i;
+            }
+        }
+        return normalIndex;
+    }
+
+    private boolean hasAnyArrowsInBag() {
+        return this.findArrowSlotInBag() != -1;
+    }
+
+    private ItemStack removeOneArrowFromBag() {
+        int slot = this.findArrowSlotInBag();
+        if (slot == -1) {
+            return ItemStack.EMPTY;
+        }
+        ItemStack stack = this.mercenaryInventory.getItem(slot);
+        if (stack.isEmpty()) {
+            return ItemStack.EMPTY;
+        }
+
+        ItemStack single = stack.copy();
+        single.setCount(1);
+        stack.shrink(1);
+        if (stack.isEmpty()) {
+            this.mercenaryInventory.setItem(slot, ItemStack.EMPTY);
+        }
+        this.mercenaryInventory.setChanged();
+        return single;
+    }
+
     private void updateCombatRoleFromEquipment() {
         ItemStack main = this.getMainHandItem();
 
@@ -626,15 +711,53 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
 
         this.updateCombatRoleFromEquipment();
 
+        boolean isArcher = this.currentRole == MercenaryRole.ARCHER;
+        boolean hasArrows = isArcher && this.hasAnyArrowsInBag();
+
+        if (this.currentRole == this.lastAppliedRole && Boolean.valueOf(hasArrows).equals(this.lastAppliedHasArrows)) {
+            return;
+        }
+
         if (this.meleeAttackGoal != null) {
             this.goalSelector.removeGoal(this.meleeAttackGoal);
         }
+        if (this.bowAttackGoal != null) {
+            this.goalSelector.removeGoal(this.bowAttackGoal);
+        }
 
-        // Por ahora, tanto GUARDIAN como ARCHER usan la misma IA melee.
-        // Más adelante podremos reintroducir un goal de ataque a distancia adaptado a 1.21.11.
-        if (this.currentRole == MercenaryRole.ARCHER || this.currentRole == MercenaryRole.GUARDIAN) {
+        if (isArcher && hasArrows && this.bowAttackGoal != null) {
+            this.goalSelector.addGoal(4, this.bowAttackGoal);
+        } else if (this.meleeAttackGoal != null) {
             this.goalSelector.addGoal(4, this.meleeAttackGoal);
         }
+
+        this.lastAppliedRole = this.currentRole;
+        this.lastAppliedHasArrows = hasArrows;
+    }
+
+    @Override
+    public void performRangedAttack(LivingEntity target, float distanceFactor) {
+        if (!(this.level() instanceof ServerLevel serverLevel)) {
+            return;
+        }
+
+        ItemStack bowStack = this.getMainHandItem();
+        if (!(bowStack.getItem() instanceof BowItem)) {
+            return;
+        }
+
+        ItemStack arrowStack = this.removeOneArrowFromBag();
+        if (arrowStack.isEmpty()) {
+            return;
+        }
+
+        var arrow = ProjectileUtil.getMobArrow(this, arrowStack, distanceFactor, bowStack);
+        double dx = target.getX() - this.getX();
+        double dy = target.getY(0.333333333333D) - arrow.getY();
+        double dz = target.getZ() - this.getZ();
+        double horizontal = Math.sqrt(dx * dx + dz * dz);
+        arrow.shoot(dx, dy + horizontal * 0.2D, dz, 1.6F, 14 - serverLevel.getDifficulty().getId() * 4);
+        serverLevel.addFreshEntity(arrow);
     }
 
     @Override
@@ -665,15 +788,69 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
                 }
             }
 
+            DamageSource lastDamage = this.getLastDamageSource();
+            if (lastDamage != null && lastDamage != this.lastReactiveDamageSource) {
+                if (this.shouldRaiseShieldFromDamage(lastDamage)) {
+                    // Mantener el escudo arriba al menos ~2.5s tras recibir daño
+                    this.reactiveShieldTicks = 50;
+                }
+                this.lastReactiveDamageSource = lastDamage;
+            }
+
+            // Uso reactivo del escudo tras recibir daño
+            if (this.reactiveShieldTicks > 0) {
+                this.reactiveShieldTicks--;
+
+                if (!this.isUsingItem()) {
+                    ItemStack offhand = this.getOffhandItem();
+                    ItemStack main = this.getMainHandItem();
+
+                    if (offhand.is(Items.SHIELD)) {
+                        this.startUsingItem(InteractionHand.OFF_HAND);
+                    } else if (main.is(Items.SHIELD)) {
+                        this.startUsingItem(InteractionHand.MAIN_HAND);
+                    }
+                } else if (this.reactiveShieldTicks == 0 && this.getUseItem().is(Items.SHIELD)) {
+                    this.stopUsingItem();
+                }
+            }
+
             if (this.tickCount % 20 == 0) {
                 this.refreshCombatRoleAndGoals();
             }
         }
     }
 
+    private boolean shouldRaiseShieldFromDamage(DamageSource source) {
+        ItemStack main = this.getMainHandItem();
+        ItemStack offhand = this.getOffhandItem();
+
+        boolean hasShield = main.is(Items.SHIELD) || offhand.is(Items.SHIELD);
+        if (!hasShield) {
+            return false;
+        }
+
+        net.minecraft.world.entity.Entity direct = source.getDirectEntity();
+        if (direct instanceof Projectile) {
+            return true;
+        }
+
+        net.minecraft.world.entity.Entity attacker = source.getEntity();
+        if (attacker instanceof Monster) {
+            return true;
+        }
+
+        if (attacker instanceof Player) {
+            return true;
+        }
+
+        return false;
+    }
+
     @Override
     public void aiStep() {
         super.aiStep();
+        this.updateSwingTime();
 
         if (!(this.level() instanceof ServerLevel serverLevel)) {
             return;
@@ -923,6 +1100,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
                     case 2 -> self.getExperience();
                     case 3 -> self.getMaxExperience();
                     case 4 -> self.getRank().ordinal();
+                    case 5 -> self.getId();
                     default -> 0;
                 };
             }
@@ -934,7 +1112,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob {
 
             @Override
             public int getCount() {
-                return 5;
+                return 6;
             }
         };
 

@@ -13,6 +13,8 @@ import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.BowItem;
+import net.minecraft.world.item.CrossbowItem;
 
 /**
  * Menú del inventario del mercenario — estilo inventario vanilla.
@@ -49,7 +51,9 @@ public class MercenaryMenu extends AbstractContainerMenu {
     private static final int PLAYER_HOTBAR_Y = 175;
 
     public MercenaryMenu(int syncId, Inventory playerInventory, MercenaryInventory mercenaryInventory) {
-        this(syncId, playerInventory, mercenaryInventory, new SimpleContainerData(5));
+        // 6 ints sincronizados: vida actual, vida máxima, exp actual, exp máxima,
+        // ordinal de rango y entityId del mercenario.
+        this(syncId, playerInventory, mercenaryInventory, new SimpleContainerData(6));
     }
 
     public MercenaryMenu(int syncId, Inventory playerInventory, MercenaryInventory mercenaryInventory, ContainerData data) {
@@ -162,6 +166,10 @@ public class MercenaryMenu extends AbstractContainerMenu {
         return this.data.get(4);
     }
 
+    public int getMercEntityId() {
+        return this.data.get(5);
+    }
+
     private static Slot iconSlot(Container container, int slotIndex, int x, int y, String spritePath) {
         final Identifier icon = Identifier.withDefaultNamespace(spritePath);
         return new Slot(container, slotIndex, x, y) {
@@ -221,8 +229,19 @@ public class MercenaryMenu extends AbstractContainerMenu {
     }
 
     private static boolean isMainHandItem(ItemStack stack) {
+        if (stack.isEmpty()) {
+            return false;
+        }
+
+        // Aceptar explícitamente arcos y ballestas aunque no declaren
+        // modificadores de atributo para MAINHAND en el sistema nuevo.
+        Item item = stack.getItem();
+        if (item instanceof BowItem || item instanceof CrossbowItem) {
+            return true;
+        }
+
         // Mano principal: cualquier ítem que tenga atributos para MAINHAND
-        // (espadas, hachas, picos, lanzas, arcos, etc. en el sistema nuevo).
+        // (espadas, hachas, picos, lanzas, etc.).
         return hasMainHandAttributes(stack);
     }
 

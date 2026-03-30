@@ -142,10 +142,10 @@ public class EmeraldMeleeAttackGoal extends Goal {
         // Contra creepers: no acercarse más allá del alcance de ataque para evitar
         // que la explosión lance al mercenario por los aires.
         boolean isCreeper = target instanceof Creeper;
-        double attackReach = this.getAttackReachSqr(target);
-        boolean closeEnoughToCreeper = isCreeper && distanceSqr <= attackReach * 1.3;
+        double attackReachSqr = this.getAttackReachSqr(target);
+        boolean closeEnoughToCreeper = isCreeper && distanceSqr <= attackReachSqr;
 
-        if (!closeEnoughToCreeper
+        if ((!isCreeper || !closeEnoughToCreeper)
                 && (this.followingTargetEvenIfNotSeen || this.mob.getSensing().hasLineOfSight(target))
                 && this.ticksUntilNextPathRecalculation <= 0
                 && (this.pathedTargetX == 0.0D && this.pathedTargetY == 0.0D && this.pathedTargetZ == 0.0D
@@ -194,6 +194,16 @@ public class EmeraldMeleeAttackGoal extends Goal {
     }
 
     protected double getAttackReachSqr(LivingEntity target) {
-        return (double) (this.mob.getBbWidth() * 2.0F * this.mob.getBbWidth() * 2.0F + target.getBbWidth());
+        double base = (double) (this.mob.getBbWidth() * 2.0F * this.mob.getBbWidth() * 2.0F + target.getBbWidth());
+
+        // Contra creepers, permitimos un "alcance" mayor para que el mercenario
+        // pueda golpear desde algo más lejos sin tener que pegarse a su hitbox.
+        // Esto mantiene la física de knockback 100 % vanilla (LivingEntity.knockback),
+        // cambiando solo la distancia a la que se coloca.
+        if (target instanceof Creeper) {
+            return base * 4.0D; // ~doble alcance lineal (sqrt(4) = 2)
+        }
+
+        return base;
     }
 }
