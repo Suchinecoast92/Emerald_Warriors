@@ -34,6 +34,9 @@ public class EmeraldBowAttackGoal extends Goal {
 
     @Override
     public boolean canUse() {
+        if (this.mob.isNeutralOrder()) {
+            return false;
+        }
         LivingEntity target = this.mob.getTarget();
         if (target == null || !target.isAlive()) {
             return false;
@@ -43,6 +46,9 @@ public class EmeraldBowAttackGoal extends Goal {
 
     @Override
     public boolean canContinueToUse() {
+        if (this.mob.isNeutralOrder()) {
+            return false;
+        }
         LivingEntity target = this.mob.getTarget();
         if (target == null || !target.isAlive()) {
             return false;
@@ -108,6 +114,16 @@ public class EmeraldBowAttackGoal extends Goal {
         } else {
             // Dentro de rango y con visión: detener el pathing y hacer un leve strafe tipo vanilla
             this.mob.getNavigation().stop();
+            
+            // SENTINEL+ Tactical Height Advantage - maintain high ground with ranged weapons
+            if (this.shouldMaintainHeightAdvantage(target)) {
+                double heightDifference = this.mob.getY() - target.getY();
+                // If we have significant height advantage (2+ blocks), avoid unnecessary movement
+                if (heightDifference >= 2.0) {
+                    // Reduce strafe movement to maintain advantageous position
+                    this.strafeTime = Math.max(0, this.strafeTime - 1);
+                }
+            }
 
             // Solo queremos strafe mientras REALMENTE está cargando un arco
             boolean isUsingBow = this.mob.isUsingItem() && this.mob.getUseItem().getItem() instanceof BowItem;
@@ -159,5 +175,11 @@ public class EmeraldBowAttackGoal extends Goal {
                 this.useTime = 0;
             }
         }
+    }
+    
+    private boolean shouldMaintainHeightAdvantage(LivingEntity target) {
+        // Only SENTINEL and above ranks use tactical height advantage
+        var rank = this.mob.getRank();
+        return rank.ordinal() >= 2; // SENTINEL=2, VETERAN=3, ANCIENT_GUARD=4
     }
 }

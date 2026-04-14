@@ -41,6 +41,9 @@ public class EmeraldMeleeAttackGoal extends Goal {
 
     @Override
     public boolean canUse() {
+        if (this.mob.isNeutralOrder()) {
+            return false;
+        }
         long gameTime = this.mob.level().getGameTime();
         if (gameTime - this.lastCanUseCheck < 4L) {
             return false;
@@ -61,6 +64,9 @@ public class EmeraldMeleeAttackGoal extends Goal {
 
     @Override
     public boolean canContinueToUse() {
+        if (this.mob.isNeutralOrder()) {
+            return false;
+        }
         LivingEntity target = this.mob.getTarget();
         if (target == null || !target.isAlive()) {
             return false;
@@ -79,12 +85,20 @@ public class EmeraldMeleeAttackGoal extends Goal {
 
     private boolean isTooFarFromAnchor() {
         int maxChase = this.mob.getRank().getMaxChaseFromAnchor();
-        double maxChaseSqr = (double) maxChase * maxChase;
+        // Triple chase distance during active raids
+        double raidMultiplier = this.mob.isRaidActive() ? 3.0 : 1.0;
+        double effectiveMaxChase = maxChase * raidMultiplier;
+        double maxChaseSqr = effectiveMaxChase * effectiveMaxChase;
 
         MercenaryOrder order = this.mob.getCurrentOrder();
         switch (order) {
-            case STAY -> {
-                // En STAY dejamos que persiga libremente; luego GuardPositionGoal lo devuelve al punto.
+            case GUARD -> {
+                // En GUARD: perseguir libremente dentro del radio de guardia; GuardPositionGoal devuelve al punto.
+                BlockPos guard = this.mob.getGuardPos();
+                if (guard != null) {
+                    double guardLimit = (this.mob.getRank().getGuardRadius() + 4.0) * raidMultiplier;
+                    return this.mob.distanceToSqr(guard.getX() + 0.5, guard.getY(), guard.getZ() + 0.5) > guardLimit * guardLimit;
+                }
                 return false;
             }
             case PATROL -> {
@@ -95,7 +109,7 @@ public class EmeraldMeleeAttackGoal extends Goal {
                 }
             }
             default -> {
-                // FOLLOW / NONE: ancla = dueño
+                // FOLLOW: ancla = dueño
                 LivingEntity owner = this.mob.getOwner();
                 if (owner != null) {
                     return this.mob.distanceToSqr(owner) > maxChaseSqr;

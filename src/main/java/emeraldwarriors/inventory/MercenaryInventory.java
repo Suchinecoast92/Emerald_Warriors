@@ -45,6 +45,15 @@ public class MercenaryInventory extends SimpleContainer {
         this.owner = owner;
     }
 
+    /**
+     * Updates the container slot directly (via SimpleContainer) WITHOUT
+     * propagating the change back to the entity's equipment slots.
+     * Used by EmeraldMercenaryEntity.setItemSlot to avoid circular sync.
+     */
+    public void setItemDirect(int index, ItemStack stack) {
+        super.setItem(index, stack);
+    }
+
     @Override
     public void setItem(int index, ItemStack stack) {
         super.setItem(index, stack);

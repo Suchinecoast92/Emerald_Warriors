@@ -1,10 +1,9 @@
 package emeraldwarriors.mercenary;
 
 public enum MercenaryOrder {
-    FOLLOW("Sígueme"),
-    STAY("Espera aquí"),
-    PATROL("Patrullar zona"),
-    NONE("Sin asignación");
+    FOLLOW("Sígueme"),       // Sigue al owner, solo combate defensivo
+    GUARD("Guarda aquí"),    // Posición fija, combate en radio
+    PATROL("Patrullar zona"); // Ronda zona, combate activo en área
 
     private final String displayName;
 
@@ -17,7 +16,10 @@ public enum MercenaryOrder {
     }
 
     public MercenaryOrder next() {
-        MercenaryOrder[] values = values();
-        return values[(this.ordinal() + 1) % values.length];
+        return switch (this) {
+            case FOLLOW -> GUARD;
+            case GUARD  -> PATROL;
+            case PATROL -> FOLLOW;
+        };
     }
 }

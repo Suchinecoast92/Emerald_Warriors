@@ -24,6 +24,9 @@ public class EmeraldProtectOwnerGoal extends TargetGoal {
 
     @Override
     public boolean canUse() {
+        if (this.mercenary.isNeutralOrder()) {
+            return false;
+        }
         LivingEntity owner = this.mercenary.getOwner();
         if (owner == null) {
             return false;

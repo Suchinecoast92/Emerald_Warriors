@@ -24,7 +24,8 @@ public class PatrolAroundPointGoal extends Goal {
 
     @Override
     public boolean canUse() {
-        if (this.mercenary.getCurrentOrder() != MercenaryOrder.PATROL) {
+        MercenaryOrder order = this.mercenary.getCurrentOrder();
+        if (order != MercenaryOrder.PATROL) {
             return false;
         }
         if (this.mercenary.getPatrolCenter() == null) {
@@ -39,7 +40,8 @@ public class PatrolAroundPointGoal extends Goal {
 
     @Override
     public boolean canContinueToUse() {
-        return this.mercenary.getCurrentOrder() == MercenaryOrder.PATROL
+        MercenaryOrder order = this.mercenary.getCurrentOrder();
+        return order == MercenaryOrder.PATROL
                 && !this.mercenary.getNavigation().isDone();
     }
 
@@ -50,7 +52,9 @@ public class PatrolAroundPointGoal extends Goal {
             return;
         }
 
-        int radius = this.mercenary.getRank().getPatrolRadius();
+        int baseRadius = this.mercenary.getRank().getPatrolRadius();
+        // Triple patrol radius during active raids
+        int radius = this.mercenary.isRaidActive() ? baseRadius * 3 : baseRadius;
         var rng = this.mercenary.getRandom();
 
         // Elegir punto aleatorio dentro del radio de patrulla

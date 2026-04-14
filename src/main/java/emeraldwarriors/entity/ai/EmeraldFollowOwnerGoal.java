@@ -34,7 +34,11 @@ public class EmeraldFollowOwnerGoal extends Goal {
     @Override
     public boolean canUse() {
         MercenaryOrder order = this.mercenary.getCurrentOrder();
-        if (order != MercenaryOrder.FOLLOW && order != MercenaryOrder.NONE) {
+        if (order != MercenaryOrder.FOLLOW) {
+            return false;
+        }
+        // Don't follow if the system paused movement (too-far or owner offline)
+        if (this.mercenary.isSystemForcedNone()) {
             return false;
         }
         // No seguir al dueño si estamos en combate
@@ -58,7 +62,11 @@ public class EmeraldFollowOwnerGoal extends Goal {
     @Override
     public boolean canContinueToUse() {
         MercenaryOrder order = this.mercenary.getCurrentOrder();
-        if (order != MercenaryOrder.FOLLOW && order != MercenaryOrder.NONE) {
+        if (order != MercenaryOrder.FOLLOW) {
+            return false;
+        }
+        // Stop following if system paused movement
+        if (this.mercenary.isSystemForcedNone()) {
             return false;
         }
         // Dejar de seguir si entramos en combate
@@ -95,7 +103,11 @@ public class EmeraldFollowOwnerGoal extends Goal {
             this.timeToRecalcPath = this.adjustedTickDelay(10);
 
             if (!this.mercenary.isLeashed() && !this.mercenary.isPassenger()) {
-                this.navigation.moveTo(this.owner, this.speedModifier);
+                double speed = this.speedModifier;
+                if (this.owner.isSprinting()) {
+                    speed = Math.max(speed, 1.2D);
+                }
+                this.navigation.moveTo(this.owner, speed);
             }
         }
     }

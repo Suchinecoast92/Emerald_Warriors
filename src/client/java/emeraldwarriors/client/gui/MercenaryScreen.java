@@ -72,12 +72,18 @@ public class MercenaryScreen extends AbstractContainerScreen<MercenaryMenu> {
         drawPanel(guiGraphics, x, y, GUI_WIDTH, GUI_HEIGHT);
 
         // Separador
-        guiGraphics.fill(x + 7, y + EQUIP_HEIGHT - 1, x + GUI_WIDTH - 7, y + EQUIP_HEIGHT, SEPARATOR);
+        guiGraphics.fill(RenderPipelines.GUI, x + 7, y + EQUIP_HEIGHT - 1, x + GUI_WIDTH - 7, y + EQUIP_HEIGHT, SEPARATOR);
 
         // Fondo de cada slot
         for (Slot slot : this.menu.slots) {
             drawSlotBg(guiGraphics, x + slot.x - 1, y + slot.y - 1);
         }
+    }
+
+    @Override
+    public void renderBackground(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        this.renderBlurredBackground(guiGraphics);
+        this.renderBg(guiGraphics, partialTick, mouseX, mouseY);
     }
 
     @Override
@@ -160,17 +166,17 @@ public class MercenaryScreen extends AbstractContainerScreen<MercenaryMenu> {
     }
 
     private void drawPanel(GuiGraphics g, int x, int y, int w, int h) {
-        g.fill(x, y, x + w, y + h, PANEL_BG);
-        g.fill(x, y, x + w - 1, y + 1, BORDER_LITE);
-        g.fill(x, y, x + 1, y + h - 1, BORDER_LITE);
-        g.fill(x + 1, y + h - 1, x + w, y + h, BORDER_DARK);
-        g.fill(x + w - 1, y + 1, x + w, y + h, BORDER_DARK);
+        g.fill(RenderPipelines.GUI, x, y, x + w, y + h, PANEL_BG);
+        g.fill(RenderPipelines.GUI, x, y, x + w - 1, y + 1, BORDER_LITE);
+        g.fill(RenderPipelines.GUI, x, y, x + 1, y + h - 1, BORDER_LITE);
+        g.fill(RenderPipelines.GUI, x + 1, y + h - 1, x + w, y + h, BORDER_DARK);
+        g.fill(RenderPipelines.GUI, x + w - 1, y + 1, x + w, y + h, BORDER_DARK);
     }
 
     private void drawSlotBg(GuiGraphics g, int sx, int sy) {
-        g.fill(sx, sy, sx + 18, sy + 18, SLOT_DARK);
-        g.fill(sx + 1, sy + 1, sx + 17, sy + 17, SLOT_LITE);
-        g.fill(sx + 1, sy + 1, sx + 16, sy + 16, SLOT_BG);
+        g.fill(RenderPipelines.GUI, sx, sy, sx + 18, sy + 18, SLOT_DARK);
+        g.fill(RenderPipelines.GUI, sx + 1, sy + 1, sx + 17, sy + 17, SLOT_LITE);
+        g.fill(RenderPipelines.GUI, sx + 1, sy + 1, sx + 16, sy + 16, SLOT_BG);
     }
 
     @Override

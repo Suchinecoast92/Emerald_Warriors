@@ -1,5 +1,8 @@
 package emeraldwarriors.entity;
 
+import emeraldwarriors.entity.ai.DefendVillagerGoal;
+import emeraldwarriors.entity.ai.EmeraldCrossbowAttackGoal;
+import emeraldwarriors.horn.HornGroupManager;
 import emeraldwarriors.entity.ai.EmeraldBowAttackGoal;
 import emeraldwarriors.entity.ai.EmeraldFollowOwnerGoal;
 import emeraldwarriors.entity.ai.EmeraldMeleeAttackGoal;
@@ -9,6 +12,7 @@ import emeraldwarriors.entity.ai.OwnerHurtTargetGoal;
 import emeraldwarriors.entity.ai.PatrolAroundPointGoal;
 import emeraldwarriors.entity.ai.RetreatLowHpGoal;
 import emeraldwarriors.entity.ai.ShieldAgainstCreeperGoal;
+import emeraldwarriors.entity.ai.UseHealingItemGoal;
 import emeraldwarriors.inventory.MercenaryInventory;
 import emeraldwarriors.inventory.MercenaryMenu;
 import emeraldwarriors.mercenary.MercenaryOrder;
@@ -21,6 +25,7 @@ import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Vec3i;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.DifficultyInstance;
@@ -37,13 +42,23 @@ import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
+import net.minecraft.world.entity.ai.goal.OpenDoorGoal;
+import net.minecraft.world.entity.ai.navigation.PathNavigation;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
+import java.util.List;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
 import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
+import net.minecraft.world.entity.monster.CrossbowAttackMob;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.monster.RangedAttackMob;
+import net.minecraft.world.item.CrossbowItem;
+import net.minecraft.world.entity.animal.golem.IronGolem;
+import net.minecraft.world.entity.npc.villager.AbstractVillager;
+import net.minecraft.world.entity.raid.Raider;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -52,33 +67,46 @@ import net.minecraft.world.item.ArrowItem;
 import net.minecraft.world.item.BowItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.ProjectileWeaponItem;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.ServerLevelAccessor;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.entity.Relative;
 
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.projectile.arrow.AbstractArrow;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.entity.projectile.ProjectileUtil;
 
 import java.util.UUID;
 
-public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttackMob {
+public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttackMob, CrossbowAttackMob {
 
     private static final int TICKS_PER_DAY = 24000;
     private static final int CONTRACT_OFFER_TIMEOUT_TICKS = 200; // ~10 segundos
 
     private static final EntityDataAccessor<Integer> DATA_RANK_ORDINAL = SynchedEntityData.defineId(EmeraldMercenaryEntity.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Integer> DATA_ORDER_ORDINAL = SynchedEntityData.defineId(EmeraldMercenaryEntity.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Boolean> DATA_IS_CHARGING_CROSSBOW = SynchedEntityData.defineId(EmeraldMercenaryEntity.class, EntityDataSerializers.BOOLEAN);
 
     private MercenaryRole currentRole = MercenaryRole.NONE;
 
     private EmeraldMeleeAttackGoal meleeAttackGoal;
     private EmeraldBowAttackGoal bowAttackGoal;
+    private EmeraldCrossbowAttackGoal crossbowAttackGoal;
 
     private MercenaryRole lastAppliedRole = null;
     private Boolean lastAppliedHasArrows = null;
+    private boolean lastAppliedIsCrossbow = false;
 
     // Dueño y apariencia básica
     private UUID ownerUuid;
@@ -89,7 +117,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private int contractDaysPerPurchase;
 
     // Sistema de órdenes
-    private MercenaryOrder currentOrder = MercenaryOrder.NONE;
+    private MercenaryOrder currentOrder = MercenaryOrder.FOLLOW;
     private BlockPos guardPos;
     private BlockPos patrolCenter;
 
@@ -105,6 +133,27 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private int reactiveShieldTicks;
 
     private DamageSource lastReactiveDamageSource;
+
+    // ANCIENT_GUARD passive regeneration
+    private int ticksSinceLastDamage = 0;
+    private int regenerationTicks = 0;
+    
+    // Pauses EmeraldFollowOwnerGoal when owner is offline or too far (FOLLOW order only)
+    private boolean systemForcedNone = false;
+
+    public boolean isSystemForcedNone() {
+        return this.systemForcedNone;
+    }
+
+    @Override
+    public boolean isPersistenceRequired() {
+        return true;
+    }
+
+    // Multi-target combat system for VETERAN and ANCIENT_GUARD
+    private LivingEntity secondaryTarget = null;
+    private int targetSwitchCooldown = 0;
+    private int primaryTargetTicks = 0;
 
     // Inventario persistente del mercenario (equipo + mochila)
     private final MercenaryInventory mercenaryInventory = new MercenaryInventory(this);
@@ -210,7 +259,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     protected void defineSynchedData(SynchedEntityData.Builder builder) {
         super.defineSynchedData(builder);
         builder.define(DATA_RANK_ORDINAL, MercenaryRank.RECRUIT.ordinal());
-        builder.define(DATA_ORDER_ORDINAL, MercenaryOrder.NONE.ordinal());
+        builder.define(DATA_ORDER_ORDINAL, MercenaryOrder.FOLLOW.ordinal());
+        builder.define(DATA_IS_CHARGING_CROSSBOW, false);
     }
 
     public MercenaryRank getRank() {
@@ -222,7 +272,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         return values[ordinal];
     }
 
-    private void setRank(MercenaryRank rank) {
+    public void setRank(MercenaryRank rank) {
         this.rank = rank;
         this.getEntityData().set(DATA_RANK_ORDINAL, rank.ordinal());
     }
@@ -233,9 +283,25 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         int ordinal = this.getEntityData().get(DATA_ORDER_ORDINAL);
         MercenaryOrder[] values = MercenaryOrder.values();
         if (ordinal < 0 || ordinal >= values.length) {
-            return MercenaryOrder.NONE;
+            return MercenaryOrder.FOLLOW;
         }
         return values[ordinal];
+    }
+
+    /** Called by the horn system to apply an order from a player's goat horn. */
+    public void setCurrentOrderFromHorn(MercenaryOrder order, Player commander) {
+        if (this.ownerUuid == null || !this.ownerUuid.equals(commander.getUUID())) {
+            return;
+        }
+        this.setCurrentOrder(order);
+        // Force immediate AI recalculation
+        this.setTarget(null);
+        this.getNavigation().stop();
+        // Visual acknowledgement
+        if (this.level() instanceof ServerLevel sl) {
+            sl.sendParticles(ParticleTypes.ENCHANTED_HIT,
+                    this.getX(), this.getY() + 1.0, this.getZ(), 8, 0.3, 0.4, 0.3, 0.1);
+        }
     }
 
     public void setCurrentOrder(MercenaryOrder order) {
@@ -243,10 +309,14 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.getEntityData().set(DATA_ORDER_ORDINAL, order.ordinal());
 
         // Al cambiar de orden, fijar posiciones de guardia/patrulla
-        if (order == MercenaryOrder.STAY) {
+        if (order == MercenaryOrder.GUARD) {
             this.guardPos = this.blockPosition();
         } else if (order == MercenaryOrder.PATROL) {
             this.patrolCenter = this.blockPosition();
+        }
+        // Refresh proactive target goal based on new order (server-side only)
+        if (!this.level().isClientSide()) {
+            this.refreshTargetGoalsByOrder();
         }
     }
 
@@ -256,6 +326,16 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     public BlockPos getPatrolCenter() {
         return this.patrolCenter;
+    }
+
+    public boolean isNeutralOrder() {
+        // No neutral order exists in the 3-order system. All orders allow defensive combat.
+        // Proactive vs defensive is controlled by refreshTargetGoalsByOrder() (NearestAttackableTargetGoal)
+        return false;
+    }
+
+    public boolean isOutOfCombatForHeal() {
+        return this.getTarget() == null && this.ticksSinceLastDamage >= 200;
     }
 
     /**
@@ -315,8 +395,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.applyRankAttributes();
         this.setHealth(this.getMaxHealth());
 
-        // Orden por defecto al spawnear: sin asignación
-        this.setCurrentOrder(MercenaryOrder.NONE);
+        // Orden por defecto: seguir al owner
+        this.setCurrentOrder(MercenaryOrder.FOLLOW);
 
         return data;
     }
@@ -417,10 +497,18 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         // Orden
         input.getString("MercenaryOrder").ifPresent(value -> {
             try {
-                this.currentOrder = MercenaryOrder.valueOf(value);
-                this.getEntityData().set(DATA_ORDER_ORDINAL, this.currentOrder.ordinal());
+                MercenaryOrder loaded = MercenaryOrder.valueOf(value);
+                this.currentOrder = loaded;
+                this.getEntityData().set(DATA_ORDER_ORDINAL, loaded.ordinal());
             } catch (IllegalArgumentException ignored) {
-                this.setCurrentOrder(MercenaryOrder.NONE);
+                // Legacy values (NONE, STAY, NONE_STAY, NONE_PATROL) → map to nearest new order
+                if (value.contains("STAY")) {
+                    this.setCurrentOrder(MercenaryOrder.GUARD);
+                } else if (value.contains("PATROL")) {
+                    this.setCurrentOrder(MercenaryOrder.PATROL);
+                } else {
+                    this.setCurrentOrder(MercenaryOrder.FOLLOW);
+                }
             }
         });
 
@@ -572,9 +660,13 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         // Prioridad 1: Retirarse con poca vida (todos los rangos)
         this.goalSelector.addGoal(1, new RetreatLowHpGoal(this, 1.2D));
 
+        // Prioridad 1: Usar item de curación cuando tiene poca vida
+        this.goalSelector.addGoal(1, new UseHealingItemGoal(this));
+
         // Prioridad 2: Ataque cuerpo a cuerpo (con animación de swing)
-        this.meleeAttackGoal = new EmeraldMeleeAttackGoal(this, 1.1D, true);
-        this.bowAttackGoal = new EmeraldBowAttackGoal(this, 0.9D, 20, 15.0F);
+        this.meleeAttackGoal    = new EmeraldMeleeAttackGoal(this, 1.1D, true);
+        this.bowAttackGoal      = new EmeraldBowAttackGoal(this, 0.9D, 20, 15.0F);
+        this.crossbowAttackGoal = new EmeraldCrossbowAttackGoal(this, 0.9D, 30, 15.0F);
 
         // Prioridad 3: Movimiento según orden
         this.goalSelector.addGoal(3, new EmeraldFollowOwnerGoal(this, 1.0D, 5.0F, 2.0F));
@@ -582,6 +674,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
         // Prioridad 4: Patrullar zona (solo en orden PATROL)
         this.goalSelector.addGoal(4, new PatrolAroundPointGoal(this, 0.9D));
+
+        // Prioridad 5: Abrir puertas y puertas de valla
+        this.goalSelector.addGoal(5, new OpenDoorGoal(this, true));
 
         // Prioridad 8-10: Comportamiento idle
         this.goalSelector.addGoal(8, new LookAtPlayerGoal(this, Player.class, 8.0F));
@@ -595,11 +690,29 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.targetSelector.addGoal(1, new OwnerHurtTargetGoal(this));
         // 2: Mob que está pegando al mercenario (autodefensa)
         this.targetSelector.addGoal(2, new HurtByTargetGoal(this));
-        // 3: Hostil más cercano dentro del radio de detección
-        this.targetSelector.addGoal(3, new NearestAttackableTargetGoal<>(this, Monster.class, true));
+        // 2: Defender aldeanos, mercaderes errantes e iron golems atacados
+        this.targetSelector.addGoal(2, new DefendVillagerGoal(this, 32.0));
+        // 3: Hostil más cercano (solo en GUARD/PATROL; se añade/quita dinámicamente)
+        this.nearestAttackableGoal = new NearestAttackableTargetGoal<>(this, Monster.class, true);
+        // Initialized in refreshTargetGoalsByOrder() after goals are registered
 
         if (this.meleeAttackGoal != null) {
             this.goalSelector.addGoal(4, this.meleeAttackGoal);
+        }
+
+        // Initialize proactive target goal based on default order
+        this.refreshTargetGoalsByOrder();
+    }
+
+    private NearestAttackableTargetGoal<?> nearestAttackableGoal;
+
+    private void refreshTargetGoalsByOrder() {
+        if (this.level().isClientSide() || this.nearestAttackableGoal == null) return;
+        // Always remove first to avoid duplicates
+        this.targetSelector.removeGoal(this.nearestAttackableGoal);
+        // FOLLOW = defensive only; GUARD/PATROL = proactive combat
+        if (this.getCurrentOrder() != MercenaryOrder.FOLLOW) {
+            this.targetSelector.addGoal(3, this.nearestAttackableGoal);
         }
     }
 
@@ -621,11 +734,163 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.ownerUuid = player.getUUID();
     }
 
+    public MercenaryInventory getMercenaryInventory() {
+        return this.mercenaryInventory;
+    }
+
+    @Override
+    public void setItemSlot(EquipmentSlot slot, ItemStack stack) {
+        super.setItemSlot(slot, stack);
+        if (!this.level().isClientSide()) {
+            int invSlot = switch (slot) {
+                case MAINHAND -> MercenaryInventory.SLOT_MAIN_HAND;
+                case OFFHAND  -> MercenaryInventory.SLOT_OFF_HAND;
+                case HEAD     -> MercenaryInventory.SLOT_HELMET;
+                case CHEST    -> MercenaryInventory.SLOT_CHESTPLATE;
+                case LEGS     -> MercenaryInventory.SLOT_LEGGINGS;
+                case FEET     -> MercenaryInventory.SLOT_BOOTS;
+                default       -> -1;
+            };
+            if (invSlot >= 0) {
+                this.mercenaryInventory.setItemDirect(invSlot, stack);
+            }
+        }
+    }
+
+    @Override
+    public void hurtArmor(DamageSource source, float amount) {
+        super.hurtArmor(source, amount);
+        if (amount > 0.0F && !this.level().isClientSide()) {
+            // Reset ANCIENT_GUARD regeneration timer when taking damage
+            if (this.getRank() == MercenaryRank.ANCIENT_GUARD) {
+                this.ticksSinceLastDamage = 0;
+                this.regenerationTicks = 0;
+            }
+            
+            int armorDmg = Math.max(1, (int) (amount / 4.0F));
+            for (EquipmentSlot slot : new EquipmentSlot[]{
+                    EquipmentSlot.HEAD, EquipmentSlot.CHEST,
+                    EquipmentSlot.LEGS, EquipmentSlot.FEET}) {
+                ItemStack armor = this.getItemBySlot(slot);
+                if (!armor.isEmpty() && armor.isDamageableItem()) {
+                    armor.hurtAndBreak(armorDmg, this, slot);
+                }
+            }
+            
+        }
+    }
+
+    @Override
+    public float applyItemBlocking(ServerLevel level, DamageSource source, float amount) {
+        float result = super.applyItemBlocking(level, source, amount);
+        // Damage the shield proportionally to what was blocked
+        float blocked = amount - result;
+        if (blocked > 0f) {
+            ItemStack shieldStack = this.getItemBlockingWith();
+            if (shieldStack != null && !shieldStack.isEmpty() && shieldStack.isDamageableItem()) {
+                InteractionHand hand = this.getUsedItemHand();
+                EquipmentSlot slot = hand == InteractionHand.MAIN_HAND ? EquipmentSlot.MAINHAND : EquipmentSlot.OFFHAND;
+                shieldStack.hurtAndBreak(Math.max(1, (int) (blocked / 2.0f)), this, slot);
+            }
+        }
+        return result;
+    }
+
+    @Override
+    public void actuallyHurt(ServerLevel level, DamageSource source, float amount) {
+        // VETERAN attack anticipation - 25% chance to reduce damage with shield
+        if (this.getRank() == MercenaryRank.VETERAN && this.random.nextFloat() < 0.25f) {
+            ItemStack mainHand = this.getMainHandItem();
+            ItemStack offHand = this.getOffhandItem();
+            
+            // Check if has shield equipped
+            if (mainHand.is(Items.SHIELD) || offHand.is(Items.SHIELD)) {
+                // Anticipate attack - reduce damage by 20%
+                amount *= 0.8f;
+                
+                // Play shield block sound
+                level.playSound(null, this.getX(), this.getY(), this.getZ(),
+                        SoundEvents.SHIELD_BLOCK, SoundSource.HOSTILE, 0.8f, 1.0f);
+                
+                // Brief shield raise animation (if not already using item)
+                if (!this.isUsingItem()) {
+                    if (offHand.is(Items.SHIELD)) {
+                        this.startUsingItem(InteractionHand.OFF_HAND);
+                        // Stop using shield after a brief moment (will be handled by existing reactive shield code)
+                        this.reactiveShieldTicks = Math.max(this.reactiveShieldTicks, 10);
+                    } else if (mainHand.is(Items.SHIELD)) {
+                        this.startUsingItem(InteractionHand.MAIN_HAND);
+                        this.reactiveShieldTicks = Math.max(this.reactiveShieldTicks, 10);
+                    }
+                }
+            }
+        }
+        
+        super.actuallyHurt(level, source, amount);
+    }
+
     public void addContractDays(int days) {
         if (days <= 0) {
             return;
         }
         this.contractTicksRemaining += days * TICKS_PER_DAY;
+    }
+
+    @Override
+    public float getWalkTargetValue(BlockPos pos) {
+        // Evitar polvo de nieve - es mortal para los mercenarios
+        if (this.level().getBlockState(pos).is(Blocks.POWDER_SNOW) ||
+            this.level().getBlockState(pos.below()).is(Blocks.POWDER_SNOW) ||
+            this.level().getBlockState(pos.above()).is(Blocks.POWDER_SNOW)) {
+            return -1.0f; // Valor muy negativo para evitarlo completamente
+        }
+        
+        // Tambien evitar cauldron de polvo de nieve
+        if (this.level().getBlockState(pos).is(Blocks.POWDER_SNOW_CAULDRON) ||
+            this.level().getBlockState(pos.below()).is(Blocks.POWDER_SNOW_CAULDRON)) {
+            return -0.5f;
+        }
+        
+        return super.getWalkTargetValue(pos);
+    }
+    
+    @Override
+    public void setTarget(LivingEntity target) {
+        if (target != null) {
+            if (target instanceof AbstractVillager || target instanceof IronGolem) {
+                return;
+            }
+
+            // Friendly fire prevention: never target another mercenary owned by the same player
+            if (target instanceof EmeraldMercenaryEntity otherMerc) {
+                UUID otherOwner = otherMerc.getOwnerUuid();
+                if (otherOwner != null && otherOwner.equals(this.ownerUuid)) {
+                    return;
+                }
+            }
+
+            MercenaryOrder order = this.getCurrentOrder();
+            // FOLLOW: NearestAttackableTargetGoal already disabled via refreshTargetGoalsByOrder().
+            // Defensive goals (EmeraldProtectOwnerGoal, OwnerHurtTargetGoal, HurtByTargetGoal)
+            // must pass freely so mercenary defends owner and itself.
+            // During raids, triple the effective range for GUARD and PATROL
+            double raidMultiplier = this.isRaidActive() ? 3.0 : 1.0;
+            
+            if (order == MercenaryOrder.GUARD && this.guardPos != null) {
+                // GUARD: only accept targets within guardRadius+4 of the guard post
+                double limit = (this.getRank().getGuardRadius() + 4.0) * raidMultiplier;
+                if (target.distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(this.guardPos)) > limit * limit) {
+                    return;
+                }
+            } else if (order == MercenaryOrder.PATROL && this.patrolCenter != null) {
+                // PATROL: only accept targets within patrolRadius+4 of the patrol center
+                double limit = (this.getRank().getPatrolRadius() + 4.0) * raidMultiplier;
+                if (target.distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(this.patrolCenter)) > limit * limit) {
+                    return;
+                }
+            }
+        }
+        super.setTarget(target);
     }
 
     public int getExperience() {
@@ -642,6 +907,41 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     public void setMaxExperience(int maxExperience) {
         this.maxExperience = maxExperience;
+    }
+
+    // ── CrossbowAttackMob interface ──────────────────────────────────────────
+
+    @Override
+    public void setChargingCrossbow(boolean charging) {
+        this.getEntityData().set(DATA_IS_CHARGING_CROSSBOW, charging);
+    }
+
+    public boolean isChargingCrossbow() {
+        return this.getEntityData().get(DATA_IS_CHARGING_CROSSBOW);
+    }
+
+    @Override
+    public void onCrossbowAttackPerformed() {
+        // Called after CrossbowItem.performShooting() completes one shot cycle.
+    }
+
+    /** Used by CrossbowItem.tryLoadProjectiles() during stopUsingItem() to consume ammo. */
+    @Override
+    public ItemStack getProjectile(ItemStack weapon) {
+        int slot = this.findArrowSlotInBag();
+        if (slot != -1) {
+            return this.mercenaryInventory.getItem(slot);
+        }
+        return ItemStack.EMPTY;
+    }
+
+    // ── Door navigation ───────────────────────────────────────────────────────
+
+    @Override
+    protected PathNavigation createNavigation(Level level) {
+        PathNavigation nav = super.createNavigation(level);
+        nav.setCanOpenDoors(true);
+        return nav;
     }
 
     private int findArrowSlotInBag() {
@@ -690,16 +990,12 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     private void updateCombatRoleFromEquipment() {
         ItemStack main = this.getMainHandItem();
-
-        boolean hasBow = !main.isEmpty() && main.getItem() instanceof BowItem;
-        // En 1.21.11 con mappings oficiales evitamos depender de clases concretas como SwordItem.
-        // Consideramos "arma melee" cualquier cosa que no sea arco y no esté vacía.
-        boolean hasMeleeWeapon = !main.isEmpty() && !hasBow;
-
+        // Support vanilla bows, crossbows, and mod ranged weapons (any ProjectileWeaponItem)
+        boolean hasBow = !main.isEmpty() && main.getItem() instanceof ProjectileWeaponItem;
+        // Ranged combat is always available regardless of off-hand (shield + bow/crossbow is vanilla)
         if (hasBow) {
             this.currentRole = MercenaryRole.ARCHER;
         } else {
-            // Sin arma o con arma melee, trátalo como GUARDIAN para que siempre tenga IA de combate cuerpo a cuerpo.
             this.currentRole = MercenaryRole.GUARDIAN;
         }
     }
@@ -711,28 +1007,33 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
         this.updateCombatRoleFromEquipment();
 
-        boolean isArcher = this.currentRole == MercenaryRole.ARCHER;
-        boolean hasArrows = isArcher && this.hasAnyArrowsInBag();
+        boolean isArcher   = this.currentRole == MercenaryRole.ARCHER;
+        boolean hasArrows  = isArcher && this.hasAnyArrowsInBag();
+        boolean isCrossbow = isArcher && this.getMainHandItem().getItem() instanceof CrossbowItem;
 
-        if (this.currentRole == this.lastAppliedRole && Boolean.valueOf(hasArrows).equals(this.lastAppliedHasArrows)) {
+        if (this.currentRole == this.lastAppliedRole
+                && Boolean.valueOf(hasArrows).equals(this.lastAppliedHasArrows)
+                && isCrossbow == this.lastAppliedIsCrossbow) {
             return;
         }
 
-        if (this.meleeAttackGoal != null) {
-            this.goalSelector.removeGoal(this.meleeAttackGoal);
-        }
-        if (this.bowAttackGoal != null) {
-            this.goalSelector.removeGoal(this.bowAttackGoal);
-        }
+        if (this.meleeAttackGoal != null)    this.goalSelector.removeGoal(this.meleeAttackGoal);
+        if (this.bowAttackGoal != null)      this.goalSelector.removeGoal(this.bowAttackGoal);
+        if (this.crossbowAttackGoal != null) this.goalSelector.removeGoal(this.crossbowAttackGoal);
 
-        if (isArcher && hasArrows && this.bowAttackGoal != null) {
-            this.goalSelector.addGoal(4, this.bowAttackGoal);
+        if (isArcher && hasArrows) {
+            if (isCrossbow && this.crossbowAttackGoal != null) {
+                this.goalSelector.addGoal(4, this.crossbowAttackGoal);
+            } else if (this.bowAttackGoal != null) {
+                this.goalSelector.addGoal(4, this.bowAttackGoal);
+            }
         } else if (this.meleeAttackGoal != null) {
             this.goalSelector.addGoal(4, this.meleeAttackGoal);
         }
 
-        this.lastAppliedRole = this.currentRole;
-        this.lastAppliedHasArrows = hasArrows;
+        this.lastAppliedRole       = this.currentRole;
+        this.lastAppliedHasArrows  = hasArrows;
+        this.lastAppliedIsCrossbow = isCrossbow;
     }
 
     @Override
@@ -741,8 +1042,13 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             return;
         }
 
+        if (target instanceof AbstractVillager || target instanceof IronGolem) {
+            return;
+        }
+
         ItemStack bowStack = this.getMainHandItem();
-        if (!(bowStack.getItem() instanceof BowItem)) {
+        // Support vanilla bows, crossbows, and mod ranged weapons
+        if (!(bowStack.getItem() instanceof ProjectileWeaponItem)) {
             return;
         }
 
@@ -756,14 +1062,65 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         double dy = target.getY(0.333333333333D) - arrow.getY();
         double dz = target.getZ() - this.getZ();
         double horizontal = Math.sqrt(dx * dx + dz * dz);
-        arrow.shoot(dx, dy + horizontal * 0.2D, dz, 1.6F, 14 - serverLevel.getDifficulty().getId() * 4);
+        
+        // Apply bow enchantment effects (Flame, Power, Punch)
+        this.applyBowEnchantments(serverLevel, bowStack, arrow, distanceFactor);
+        
+        // Rank-based accuracy scaling - SOLDIER+ get improved precision
+        float inaccuracy = this.getRangedInaccuracyByRank(serverLevel);
+        arrow.shoot(dx, dy + horizontal * 0.2D, dz, 1.6F, inaccuracy);
         serverLevel.addFreshEntity(arrow);
+        
+        // Consume bow durability (1 per shot, vanilla behavior)
+        bowStack.hurtAndBreak(1, this, EquipmentSlot.MAINHAND);
+    }
+
+    private void applyBowEnchantments(ServerLevel level, ItemStack bowStack, AbstractArrow arrow, float distanceFactor) {
+        var registry = level.registryAccess().lookupOrThrow(Registries.ENCHANTMENT);
+
+        // Flame - set arrow on fire (100 ticks = 5 seconds, vanilla behavior)
+        registry.get(Enchantments.FLAME).ifPresent(flame -> {
+            int lvl = EnchantmentHelper.getItemEnchantmentLevel(flame, bowStack);
+            if (lvl > 0) {
+                arrow.setRemainingFireTicks(100);
+            }
+        });
+
+        // Power - extra projectile damage (+50% per level, vanilla formula)
+        // baseDamage from getMobArrow = 2.0 * distanceFactor^2
+        registry.get(Enchantments.POWER).ifPresent(power -> {
+            int lvl = EnchantmentHelper.getItemEnchantmentLevel(power, bowStack);
+            if (lvl > 0) {
+                double baseDamage = 2.0 * distanceFactor * distanceFactor;
+                arrow.setBaseDamage(baseDamage * (1.0 + lvl * 0.5));
+            }
+        });
+    }
+    
+    private float getRangedInaccuracyByRank(ServerLevel level) {
+        // Base inaccuracy calculation (vanilla mob formula)
+        float baseInaccuracy = 14 - level.getDifficulty().getId() * 4;
+        
+        // Rank-based precision scaling
+        return switch (this.getRank()) {
+            case RECRUIT -> baseInaccuracy; // 100% base inaccuracy (60% accuracy)
+            case SOLDIER -> baseInaccuracy * 0.85f; // 15% better precision (70% accuracy)
+            case SENTINEL -> baseInaccuracy * 0.70f; // 30% better precision (80% accuracy)
+            case VETERAN -> baseInaccuracy * 0.55f; // 45% better precision (87% accuracy)
+            case ANCIENT_GUARD -> baseInaccuracy * 0.40f; // 60% better precision (93% accuracy)
+        };
     }
 
     @Override
     public void tick() {
         super.tick();
         if (!this.level().isClientSide()) {
+            LivingEntity currentTarget = this.getTarget();
+            if (currentTarget instanceof AbstractVillager || currentTarget instanceof IronGolem) {
+                this.setTarget(null);
+                this.getNavigation().stop();
+            }
+
             if (this.ownerUuid == null && this.contractTicksRemaining > 0) {
                 this.contractTicksRemaining = 0;
             }
@@ -771,6 +1128,58 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                 this.contractTicksRemaining--;
                 if (this.contractTicksRemaining == 0) {
                     this.onContractExpired();
+                }
+            }
+
+            // --- Owner presence and distance checks (every 20 ticks for performance) ---
+            if (this.tickCount % 20 == 0 && this.ownerUuid != null && this.level() instanceof ServerLevel serverLvl) {
+                Player owner = this.level().getPlayerByUUID(this.ownerUuid);
+                boolean ownerOnlineHere = (owner != null);
+
+                // Check if owner is in a different dimension (dimensional follow)
+                if (!ownerOnlineHere) {
+                    for (ServerLevel otherLevel : serverLvl.getServer().getAllLevels()) {
+                        Player ownerElsewhere = otherLevel.getPlayerByUUID(this.ownerUuid);
+                        if (otherLevel != serverLvl && ownerElsewhere != null) {
+                            if (this.getCurrentOrder() == MercenaryOrder.FOLLOW && !this.systemForcedNone) {
+                                this.teleportTo(otherLevel,
+                                        ownerElsewhere.getX(), ownerElsewhere.getY(), ownerElsewhere.getZ(),
+                                        java.util.Set.of(), ownerElsewhere.getYRot(), 0f, false);
+                            }
+                            ownerOnlineHere = true;
+                            break;
+                        }
+                    }
+                }
+
+                // systemForcedNone only applies to FOLLOW order
+                if (this.getCurrentOrder() == MercenaryOrder.FOLLOW) {
+                    if (!ownerOnlineHere) {
+                        // Owner offline: pause following
+                        if (!this.systemForcedNone) {
+                            this.systemForcedNone = true;
+                            this.setTarget(null);
+                            this.getNavigation().stop();
+                        }
+                    } else if (owner != null) {
+                        double maxFollowDist = this.getRank().getMaxChaseFromAnchor() * 3.0;
+                        double resumeDist = this.getRank().getMaxChaseFromAnchor() * 1.5;
+                        if (!this.systemForcedNone && this.distanceToSqr(owner) > maxFollowDist * maxFollowDist) {
+                            // Too far: pause following, stay put
+                            this.systemForcedNone = true;
+                            this.setTarget(null);
+                            this.getNavigation().stop();
+                        } else if (this.systemForcedNone && this.distanceToSqr(owner) < resumeDist * resumeDist) {
+                            // Close enough again: resume following
+                            this.systemForcedNone = false;
+                        }
+                    } else {
+                        // Owner online in another dimension (teleport handled above)
+                        this.systemForcedNone = false;
+                    }
+                } else {
+                    // Not FOLLOW: clear flag (GUARD/PATROL manage themselves)
+                    this.systemForcedNone = false;
                 }
             }
 
@@ -792,7 +1201,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             if (lastDamage != null && lastDamage != this.lastReactiveDamageSource) {
                 if (this.shouldRaiseShieldFromDamage(lastDamage)) {
                     // Mantener el escudo arriba al menos ~2.5s tras recibir daño
-                    this.reactiveShieldTicks = 50;
+                    this.reactiveShieldTicks = 140;
                 }
                 this.lastReactiveDamageSource = lastDamage;
             }
@@ -813,6 +1222,59 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                 } else if (this.reactiveShieldTicks == 0 && this.getUseItem().is(Items.SHIELD)) {
                     this.stopUsingItem();
                 }
+            }
+
+            // Track damage timer for all ranks (needed for auto-healing and ANCIENT_GUARD regen)
+            this.ticksSinceLastDamage++;
+            
+            // ANCIENT_GUARD passive regeneration
+            if (this.getRank() == MercenaryRank.ANCIENT_GUARD) {
+                // Only regenerate if not in combat for 10 seconds (200 ticks) AND health is not full
+                if (this.ticksSinceLastDamage >= 200 && this.getTarget() == null && this.getHealth() < this.getMaxHealth()) {
+                    this.regenerationTicks++;
+                    
+                    // Regenerate 0.5 HP every 10 seconds (200 ticks)
+                    if (this.regenerationTicks >= 200) {
+                        this.heal(1.0f); // 0.5 hearts
+                        this.regenerationTicks = 0;
+                        
+                        // Healing particles at mercenary location
+                        if (this.level() instanceof ServerLevel serverLevel) {
+                            serverLevel.sendParticles(ParticleTypes.HEART,
+                                    this.getX(), this.getY() + 1.0, this.getZ(),
+                                    3, 0.3, 0.3, 0.3, 0.0);
+                        }
+                    }
+                }
+                
+                // Motivation aura for ANCIENT_GUARD - only during active raids
+                if (this.isRaidActive() && this.tickCount % 20 == 0) {
+                    double radius = 12.0;
+                    List<LivingEntity> nearbyAllies = this.level().getEntitiesOfClass(LivingEntity.class,
+                            this.getBoundingBox().inflate(radius))
+                            .stream()
+                            .filter(entity -> entity != this && 
+                                    (entity instanceof Player || entity instanceof EmeraldMercenaryEntity))
+                            .toList();
+
+                    for (LivingEntity ally : nearbyAllies) {
+                        ally.addEffect(new MobEffectInstance(MobEffects.STRENGTH, 60, 0, false, true));
+                        ally.addEffect(new MobEffectInstance(MobEffects.RESISTANCE, 60, 0, false, true));
+                    }
+                    
+                    // Aura particles
+                    if (this.level() instanceof ServerLevel serverLevel) {
+                        serverLevel.sendParticles(ParticleTypes.ENCHANT,
+                                this.getX(), this.getY() + 1.0, this.getZ(),
+                                8, 2.0, 2.0, 2.0, 0.1);
+                    }
+                }
+            }
+
+            // Note: Out-of-combat healing with inventory items is handled by UseHealingItemGoal
+
+            if ((this.getRank() == MercenaryRank.VETERAN || this.getRank() == MercenaryRank.ANCIENT_GUARD)) {
+                this.updateMultiTargetCombat();
             }
 
             if (this.tickCount % 20 == 0) {
@@ -957,11 +1419,47 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     @Override
     public boolean doHurtTarget(ServerLevel level, net.minecraft.world.entity.Entity target) {
+        if (target instanceof AbstractVillager || target instanceof IronGolem) {
+            return false;
+        }
+
         boolean result = super.doHurtTarget(level, target);
 
-        // Ganar EXP si el objetivo murió
-        if (result && target instanceof LivingEntity living && !living.isAlive()) {
-            this.addExperience(getExpForKill(living));
+        if (result) {
+            // SENTINEL critical hits - 15% chance for extra damage
+            if (this.getRank() == MercenaryRank.SENTINEL && target instanceof LivingEntity living && this.random.nextFloat() < 0.15f) {
+                // Deal additional 3-5 damage for critical hit (simulates 50% bonus)
+                float criticalBonus = 3.0f + this.random.nextFloat() * 2.0f;
+                living.hurtServer(level, this.damageSources().mobAttack(this), criticalBonus);
+                
+                // Critical hit effects
+                level.playSound(null, this.getX(), this.getY(), this.getZ(),
+                        SoundEvents.PLAYER_ATTACK_CRIT, SoundSource.HOSTILE, 1.0f, 1.0f);
+                
+                // Critical particles at target location
+                level.sendParticles(ParticleTypes.CRIT,
+                        target.getX(), target.getY(0.5), target.getZ(),
+                        8, 0.4, 0.4, 0.4, 0.1);
+            }
+            
+            // Raid damage bonuses for specific ranks and targets
+            if (target instanceof LivingEntity living) {
+                float raidBonus = this.calculateRaidDamageBonus(living);
+                if (raidBonus > 0) {
+                    living.hurtServer(level, this.damageSources().mobAttack(this), raidBonus);
+                }
+            }
+            
+            // Desgastar el arma principal al golpear
+            ItemStack mainHand = this.getMainHandItem();
+            if (!mainHand.isEmpty() && mainHand.isDamageableItem()) {
+                mainHand.hurtAndBreak(1, this, EquipmentSlot.MAINHAND);
+            }
+
+            // Ganar EXP si el objetivo murió
+            if (target instanceof LivingEntity living && !living.isAlive()) {
+                this.addExperience(getExpForKill(living));
+            }
         }
 
         return result;
@@ -1001,7 +1499,171 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             this.experience = Math.min(this.experience, this.maxExperience);
         }
     }
-
+    
+    // Cached raid state to avoid expensive checks every tick
+    private boolean cachedRaidActive = false;
+    private int raidCheckCooldown = 0;
+    
+    public boolean isRaidActive() {
+        if (!(this.level() instanceof ServerLevel level)) {
+            return false;
+        }
+        
+        // Only recheck every 2 seconds (40 ticks)
+        if (this.raidCheckCooldown > 0) {
+            this.raidCheckCooldown--;
+            return this.cachedRaidActive;
+        }
+        this.raidCheckCooldown = 40;
+        
+        // Primary check: Raids API
+        var raids = level.getRaids();
+        var raid = raids.getNearbyRaid(this.blockPosition(), 64);
+        if (raid != null && raid.isActive()) {
+            this.cachedRaidActive = true;
+            return true;
+        }
+        
+        // Fallback: Check for nearby Raider entities (in case API doesn't detect)
+        boolean hasRaiders = !this.level().getEntitiesOfClass(Raider.class,
+                this.getBoundingBox().inflate(48.0), Raider::isAlive).isEmpty();
+        
+        this.cachedRaidActive = hasRaiders;
+        return hasRaiders;
+    }
+    
+    private void updateMultiTargetCombat() {
+        // Decrease cooldowns
+        if (this.targetSwitchCooldown > 0) {
+            this.targetSwitchCooldown--;
+        }
+        
+        LivingEntity currentPrimary = this.getTarget();
+        
+        // If no primary target, clear secondary and return
+        if (currentPrimary == null || !currentPrimary.isAlive()) {
+            this.secondaryTarget = null;
+            this.primaryTargetTicks = 0;
+            return;
+        }
+        
+        // Count time with current primary target
+        this.primaryTargetTicks++;
+        
+        // Look for secondary target if we don't have one or if it's dead/gone
+        if (this.secondaryTarget == null || !this.secondaryTarget.isAlive() || 
+            this.distanceToSqr(this.secondaryTarget) > 256) { // 16 blocks max
+            this.findSecondaryTarget(currentPrimary);
+        }
+        
+        // Switch targets intelligently every 3-4 seconds (60-80 ticks)
+        if (this.targetSwitchCooldown <= 0 && this.secondaryTarget != null && 
+            this.primaryTargetTicks >= 60 && this.random.nextInt(100) < 30) {
+            
+            // Switch primary and secondary targets
+            LivingEntity temp = currentPrimary;
+            this.setTarget(this.secondaryTarget);
+            this.secondaryTarget = temp;
+            
+            // Reset counters
+            this.primaryTargetTicks = 0;
+            this.targetSwitchCooldown = 80; // 4 second cooldown before next switch
+        }
+    }
+    
+    private void findSecondaryTarget(LivingEntity currentPrimary) {
+        double maxDistance = 16.0; // Maximum engagement distance
+        LivingEntity bestSecondary = null;
+        double closestDistance = maxDistance * maxDistance;
+        
+        // Search for nearby hostile entities
+        var nearbyEntities = this.level().getEntitiesOfClass(LivingEntity.class, 
+            this.getBoundingBox().inflate(maxDistance), 
+            entity -> entity != this && entity != currentPrimary && 
+                     entity.isAlive() && this.isValidMultiTarget(entity));
+        
+        for (LivingEntity entity : nearbyEntities) {
+            double distanceSq = this.distanceToSqr(entity);
+            
+            // Prioritize entities that are attacking us or our owner
+            boolean isAttackingUs = false;
+            boolean isAttackingOwner = false;
+            
+            if (entity instanceof net.minecraft.world.entity.Mob mob) {
+                LivingEntity target = mob.getTarget();
+                isAttackingUs = target == this;
+                isAttackingOwner = this.ownerUuid != null && target != null && 
+                                 target.getUUID().equals(this.ownerUuid);
+            }
+            
+            // Calculate priority score (lower = higher priority)
+            double priorityScore = distanceSq;
+            if (isAttackingUs) priorityScore *= 0.3; // High priority
+            if (isAttackingOwner) priorityScore *= 0.5; // Medium-high priority
+            
+            if (priorityScore < closestDistance) {
+                closestDistance = priorityScore;
+                bestSecondary = entity;
+            }
+        }
+        
+        this.secondaryTarget = bestSecondary;
+    }
+    
+    private boolean isValidMultiTarget(LivingEntity entity) {
+        // Use existing target validation logic
+        if (entity instanceof Player player) {
+            // Don't attack owner
+            if (this.ownerUuid != null && player.getUUID().equals(this.ownerUuid)) {
+                return false;
+            }
+            // Don't attack peaceful players unless they attack us first
+            boolean playerTargetingUs = false;
+            if (entity instanceof net.minecraft.world.entity.Mob mob) {
+                playerTargetingUs = mob.getTarget() == this;
+            }
+            return playerTargetingUs || entity.getLastHurtByMob() == this;
+        }
+        
+        // Attack hostile mobs, illagers, etc.
+        return entity instanceof net.minecraft.world.entity.monster.Monster ||
+               entity instanceof net.minecraft.world.entity.monster.Enemy ||
+               entity.getType().toString().contains("illager") ||
+               entity.getType().toString().contains("pillager") ||
+               entity.getType().toString().contains("ravager");
+    }
+    
+    private float calculateRaidDamageBonus(LivingEntity target) {
+        float baseDamage = (float) this.getAttributeValue(Attributes.ATTACK_DAMAGE);
+        String targetType = target.getType().toString();
+        
+        return switch (this.getRank()) {
+            case SENTINEL -> {
+                // +10% damage vs Illagers (Pillager, Vindicator, Evoker)
+                if (targetType.contains("pillager") || targetType.contains("vindicator") || targetType.contains("evoker")) {
+                    yield baseDamage * 0.10f;
+                }
+                yield 0.0f;
+            }
+            case VETERAN -> {
+                // +20% damage vs Ravagers
+                if (targetType.contains("ravager")) {
+                    yield baseDamage * 0.20f;
+                }
+                yield 0.0f;
+            }
+            case ANCIENT_GUARD -> {
+                // +20% damage vs all Illagers
+                if (targetType.contains("pillager") || targetType.contains("vindicator") || 
+                    targetType.contains("evoker") || targetType.contains("ravager")) {
+                    yield baseDamage * 0.20f;
+                }
+                yield 0.0f;
+            }
+            default -> 0.0f;
+        };
+    }
+    
     private void rankUp() {
         MercenaryRank current = this.getRank();
         MercenaryRank[] ranks = MercenaryRank.values();
@@ -1023,6 +1685,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
         // Efecto visual de corazones (como al domesticar)
         this.level().broadcastEntityEvent(this, (byte) 7);
+        if (this.level() instanceof ServerLevel sl) {
+            sl.playSound(null, this.getX(), this.getY(), this.getZ(),
+                    SoundEvents.PLAYER_LEVELUP, SoundSource.NEUTRAL, 0.75f, 1.0f);
+        }
 
         // Notificar al dueño
         LivingEntity owner = this.getOwner();
@@ -1199,6 +1865,11 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                             this.getNavigation().stop();
                             this.setTarget(null);
                             this.level().broadcastEntityEvent(this, (byte) 7);
+                            if (this.level() instanceof ServerLevel sl) {
+                                sl.sendParticles(ParticleTypes.HAPPY_VILLAGER,
+                                        this.getX(), this.getY(0.5), this.getZ(),
+                                        8, 0.4, 0.5, 0.4, 0.0);
+                            }
                             this.sendMercenaryMessage(player, this.randomAcceptance());
                             this.sendContractInfo(player,
                                     "+" + daysPerPurchase + " día" + (daysPerPurchase == 1 ? "" : "s") + " de servicio.");
@@ -1206,6 +1877,33 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                         }
                     }
                 }
+            }
+            return this.level().isClientSide() ? InteractionResult.SUCCESS : InteractionResult.CONSUME;
+        }
+
+        // Shift + clic derecho con cuerno → vincular/desvincular al grupo del cuerno
+        if (isSneaking && hand == InteractionHand.MAIN_HAND && HornGroupManager.isGoatHorn(stack)) {
+            if (this.ownerUuid != null && this.ownerUuid.equals(player.getUUID())) {
+                if (!this.level().isClientSide()) {
+                    boolean nowLinked = HornGroupManager.toggleMercenary(stack, this.getUUID());
+                    if (this.level() instanceof ServerLevel sl) {
+                        if (nowLinked) {
+                            sl.sendParticles(ParticleTypes.HAPPY_VILLAGER,
+                                    this.getX(), this.getY() + 1.0, this.getZ(), 10, 0.4, 0.5, 0.4, 0.1);
+                        } else {
+                            sl.sendParticles(ParticleTypes.SMOKE,
+                                    this.getX(), this.getY() + 1.0, this.getZ(), 8, 0.4, 0.5, 0.4, 0.05);
+                        }
+                    }
+                    int count = HornGroupManager.getLinkedCount(stack);
+                    String msg = nowLinked
+                            ? "§a[♪] Vinculado al cuerno. (" + count + " total)"
+                            : "§c[♪] Desvinculado del cuerno. (" + count + " restantes)";
+                    player.displayClientMessage(net.minecraft.network.chat.Component.literal(msg), false);
+                }
+            } else if (!this.level().isClientSide()) {
+                player.displayClientMessage(
+                        net.minecraft.network.chat.Component.literal("§cEste mercenario no es tuyo."), false);
             }
             return this.level().isClientSide() ? InteractionResult.SUCCESS : InteractionResult.CONSUME;
         }
@@ -1220,6 +1918,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                 this.getNavigation().stop();
                 this.setTarget(null);
                 this.sendOrderOverlay(player, next);
+                if (this.level() instanceof ServerLevel sl) {
+                    sl.playSound(null, this.getX(), this.getY(), this.getZ(),
+                            SoundEvents.EXPERIENCE_ORB_PICKUP, SoundSource.NEUTRAL, 0.4f, 1.2f);
+                }
             }
             return this.level().isClientSide() ? InteractionResult.SUCCESS : InteractionResult.CONSUME;
         }

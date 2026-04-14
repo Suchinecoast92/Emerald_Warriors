@@ -3,7 +3,8 @@
 	"package": "emeraldwarriors.mixin",
 	"compatibilityLevel": "JAVA_21",
 	"mixins": [
-		"ExampleMixin"
+		"ExampleMixin",
+		"InstrumentItemMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

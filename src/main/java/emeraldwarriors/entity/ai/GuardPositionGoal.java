@@ -25,7 +25,8 @@ public class GuardPositionGoal extends Goal {
 
     @Override
     public boolean canUse() {
-        if (this.mercenary.getCurrentOrder() != MercenaryOrder.STAY) {
+        MercenaryOrder order = this.mercenary.getCurrentOrder();
+        if (order != MercenaryOrder.GUARD) {
             return false;
         }
         // No intentar volver a la posición de guardia mientras está en combate
@@ -42,7 +43,8 @@ public class GuardPositionGoal extends Goal {
 
     @Override
     public boolean canContinueToUse() {
-        if (this.mercenary.getCurrentOrder() != MercenaryOrder.STAY) {
+        MercenaryOrder order = this.mercenary.getCurrentOrder();
+        if (order != MercenaryOrder.GUARD) {
             return false;
         }
         // Si entra en combate, dejamos de forzar el regreso a guardPos

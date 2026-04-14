@@ -14,6 +14,7 @@ import net.minecraft.client.renderer.entity.state.HumanoidRenderState;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.HumanoidArm;
+import net.minecraft.world.item.CrossbowItem;
 import net.minecraft.world.item.Items;
 
 import java.util.HashMap;
@@ -79,7 +80,26 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
         super.extractRenderState(entity, state, partialTick);
 
         // === Forzar poses de uso de items ===
-        if (entity.isUsingItem()) {
+
+        // Crossbow: charging pose (both arms pull the string — vanilla pillager style)
+        if (entity.isChargingCrossbow()) {
+            state.rightArmPose = HumanoidModel.ArmPose.CROSSBOW_CHARGE;
+            state.leftArmPose  = HumanoidModel.ArmPose.CROSSBOW_CHARGE;
+            // Sync charge progress for smooth arm animation
+            if (entity.isUsingItem()) {
+                state.isUsingItem = true;
+                state.useItemHand = entity.getUsedItemHand();
+                state.ticksUsingItem = entity.getTicksUsingItem() + partialTick;
+            }
+        }
+        // Crossbow: aiming/holding pose (loaded crossbow, not charging — vanilla hold)
+        else if (entity.getMainHandItem().getItem() instanceof CrossbowItem
+                && CrossbowItem.isCharged(entity.getMainHandItem())) {
+            state.rightArmPose = HumanoidModel.ArmPose.CROSSBOW_HOLD;
+            state.leftArmPose  = HumanoidModel.ArmPose.CROSSBOW_HOLD;
+        }
+        // Bow & shield poses
+        else if (entity.isUsingItem()) {
             InteractionHand usedHand = entity.getUsedItemHand();
             net.minecraft.world.item.ItemStack usedItem = entity.getItemInHand(usedHand);
 
