@@ -8,8 +8,15 @@ import emeraldwarriors.menu.ModMenus;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.animal.golem.IronGolem;
 import net.minecraft.world.entity.npc.villager.AbstractVillager;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.BowItem;
+import net.minecraft.world.item.CrossbowItem;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,12 +43,34 @@ public class Emerald_Warriors implements ModInitializer {
 		// projectiles/attacks from harming villagers or golems (so golems don't retaliate)
 		ServerLivingEntityEvents.ALLOW_DAMAGE.register((entity, source, amount) -> {
 			var attacker = source.getEntity();
+			if (entity instanceof EmeraldMercenaryEntity merc && attacker instanceof Player p) {
+				var owner = merc.getOwnerUuid();
+				var direct = source.getDirectEntity();
+				if (owner != null && owner.equals(p.getUUID()) && direct == attacker) {
+					boolean usedWeapon = isWeaponForDiscipline(p.getMainHandItem());
+					merc.onOwnerMeleeHit(p, usedWeapon);
+					return true;
+				}
+			}
 			// Block IronGolem → mercenary damage (prevents accidental-hit retaliation)
 			if (entity instanceof EmeraldMercenaryEntity && attacker instanceof IronGolem) {
 				return false;
 			}
 			// Block mercenary → villager/golem damage (stray arrows, AOE)
 			if (attacker instanceof EmeraldMercenaryEntity) {
+				if (entity instanceof Player p) {
+					var owner = ((EmeraldMercenaryEntity) attacker).getOwnerUuid();
+					if (owner != null && owner.equals(p.getUUID()) && !((EmeraldMercenaryEntity) attacker).isDisciplineSlapDamageAllowed()) {
+						return false;
+					}
+				}
+				if (entity instanceof EmeraldMercenaryEntity other) {
+					var owner = ((EmeraldMercenaryEntity) attacker).getOwnerUuid();
+					var otherOwner = other.getOwnerUuid();
+					if (owner != null && owner.equals(otherOwner)) {
+						return false;
+					}
+				}
 				if (entity instanceof AbstractVillager || entity instanceof IronGolem) {
 					return false;
 				}
@@ -51,6 +80,19 @@ public class Emerald_Warriors implements ModInitializer {
 			if (directEntity != null && directEntity != attacker) {
 				var ownerEntity = source.getEntity();
 				if (ownerEntity instanceof EmeraldMercenaryEntity) {
+					if (entity instanceof Player p) {
+						var owner = ((EmeraldMercenaryEntity) ownerEntity).getOwnerUuid();
+						if (owner != null && owner.equals(p.getUUID()) && !((EmeraldMercenaryEntity) ownerEntity).isDisciplineSlapDamageAllowed()) {
+							return false;
+						}
+					}
+					if (entity instanceof EmeraldMercenaryEntity other) {
+						var owner = ((EmeraldMercenaryEntity) ownerEntity).getOwnerUuid();
+						var otherOwner = other.getOwnerUuid();
+						if (owner != null && owner.equals(otherOwner)) {
+							return false;
+						}
+					}
 					if (entity instanceof AbstractVillager || entity instanceof IronGolem) {
 						return false;
 					}
@@ -65,5 +107,22 @@ public class Emerald_Warriors implements ModInitializer {
 		});
 		
 		LOGGER.info("Emerald Warriors: mercenary system initialized (entities registered).");
+	}
+
+	private static boolean isWeaponForDiscipline(ItemStack stack) {
+		if (stack == null || stack.isEmpty()) {
+			return false;
+		}
+		Item item = stack.getItem();
+		if (item instanceof BowItem || item instanceof CrossbowItem) {
+			return true;
+		}
+		final double[] extraDamage = new double[1];
+		stack.forEachModifier(EquipmentSlot.MAINHAND, (attribute, modifier) -> {
+			if (attribute != null && attribute.equals(Attributes.ATTACK_DAMAGE)) {
+				extraDamage[0] += modifier.amount();
+			}
+		});
+		return (1.0D + extraDamage[0]) > 1.0D;
 	}
 }

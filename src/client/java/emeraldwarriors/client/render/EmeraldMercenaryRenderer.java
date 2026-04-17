@@ -16,6 +16,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.item.CrossbowItem;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -148,6 +149,13 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
             Emerald_Warriors.LOGGER.info("[EmeraldMercenaryRenderer] Entity {} skinId={} slim={} texture={}",
                     entity.getId(), skinId, isSlim, newTexture);
         }
+    }
+
+    @Override
+    public Vec3 getRenderOffset(MercenaryRenderState state) {
+        // Bajar ligeramente el modelo para que la altura visual coincida con la del jugador vanilla
+        Vec3 base = super.getRenderOffset(state);
+        return base.add(0.0D, -0.1D, 0.0D);
     }
 
     @Override

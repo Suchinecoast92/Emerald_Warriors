@@ -87,7 +87,12 @@ public class EmeraldMeleeAttackGoal extends Goal {
         int maxChase = this.mob.getRank().getMaxChaseFromAnchor();
         // Triple chase distance during active raids
         double raidMultiplier = this.mob.isRaidActive() ? 3.0 : 1.0;
+
+        LivingEntity target = this.mob.getTarget();
+        double playerMultiplier = target instanceof Player ? 2.0 : 1.0;
+
         double effectiveMaxChase = maxChase * raidMultiplier;
+        effectiveMaxChase *= playerMultiplier;
         double maxChaseSqr = effectiveMaxChase * effectiveMaxChase;
 
         MercenaryOrder order = this.mob.getCurrentOrder();
@@ -121,7 +126,8 @@ public class EmeraldMeleeAttackGoal extends Goal {
 
     @Override
     public void start() {
-        this.mob.getNavigation().moveTo(this.path, this.speedModifier);
+        LivingEntity target = this.mob.getTarget();
+        this.mob.getNavigation().moveTo(this.path, target != null ? this.getChaseSpeed(target) : this.speedModifier);
         this.mob.setAggressive(true);
         this.ticksUntilNextPathRecalculation = 0;
         this.ticksUntilNextAttack = 0;
@@ -149,6 +155,15 @@ public class EmeraldMeleeAttackGoal extends Goal {
             return;
         }
 
+        boolean isPlayerTarget = target instanceof Player;
+        double chaseSpeed = this.getChaseSpeed(target);
+
+        if (this.isTooFarFromAnchor()) {
+            this.mob.setTarget(null);
+            this.mob.getNavigation().stop();
+            return;
+        }
+
         this.mob.getLookControl().setLookAt(target, 30.0F, 30.0F);
         double distanceSqr = this.mob.distanceToSqr(target.getX(), target.getY(), target.getZ());
         this.ticksUntilNextPathRecalculation = Math.max(this.ticksUntilNextPathRecalculation - 1, 0);
@@ -163,12 +178,12 @@ public class EmeraldMeleeAttackGoal extends Goal {
                 && (this.followingTargetEvenIfNotSeen || this.mob.getSensing().hasLineOfSight(target))
                 && this.ticksUntilNextPathRecalculation <= 0
                 && (this.pathedTargetX == 0.0D && this.pathedTargetY == 0.0D && this.pathedTargetZ == 0.0D
-                || target.distanceToSqr(this.pathedTargetX, this.pathedTargetY, this.pathedTargetZ) >= 1.0D
+                || target.distanceToSqr(this.pathedTargetX, this.pathedTargetY, this.pathedTargetZ) >= (isPlayerTarget ? 0.25D : 1.0D)
                 || this.mob.getRandom().nextFloat() < 0.05F)) {
             this.pathedTargetX = target.getX();
             this.pathedTargetY = target.getY();
             this.pathedTargetZ = target.getZ();
-            this.ticksUntilNextPathRecalculation = 4 + this.mob.getRandom().nextInt(7);
+            this.ticksUntilNextPathRecalculation = isPlayerTarget ? 1 + this.mob.getRandom().nextInt(2) : 4 + this.mob.getRandom().nextInt(7);
 
             if (distanceSqr > 1024.0D) {
                 this.ticksUntilNextPathRecalculation += 10;
@@ -176,8 +191,9 @@ public class EmeraldMeleeAttackGoal extends Goal {
                 this.ticksUntilNextPathRecalculation += 5;
             }
 
-            if (!this.mob.getNavigation().moveTo(target, this.speedModifier)) {
-                this.ticksUntilNextPathRecalculation += 15;
+            boolean movedWithOffset = !isPlayerTarget && this.moveToTargetWithOffset(target, distanceSqr, chaseSpeed);
+            if (!movedWithOffset && !this.mob.getNavigation().moveTo(target, chaseSpeed)) {
+                this.ticksUntilNextPathRecalculation += isPlayerTarget ? 2 : 15;
             }
 
             this.ticksUntilNextPathRecalculation = this.adjustedTickDelay(this.ticksUntilNextPathRecalculation);
@@ -188,6 +204,27 @@ public class EmeraldMeleeAttackGoal extends Goal {
 
         this.ticksUntilNextAttack = Math.max(this.ticksUntilNextAttack - 1, 0);
         this.checkAndPerformAttack(target, distanceSqr);
+    }
+
+    private boolean moveToTargetWithOffset(LivingEntity target, double distanceSqr, double speed) {
+        if (distanceSqr > 36.0D) {
+            return false;
+        }
+
+        double radius = 1.2D + (double) (this.mob.getId() % 3) * 0.2D;
+        double angle = (double) (this.mob.getId() * 31) * 0.017453292519943295D;
+        double x = target.getX() + Math.cos(angle) * radius;
+        double z = target.getZ() + Math.sin(angle) * radius;
+
+        return this.mob.getNavigation().moveTo(x, target.getY(), z, speed);
+    }
+
+    private double getChaseSpeed(LivingEntity target) {
+        double speed = this.speedModifier;
+        if (target instanceof Player) {
+            speed = Math.max(speed, 1.1D);
+        }
+        return speed;
     }
 
     protected void checkAndPerformAttack(LivingEntity target, double distanceSqr) {

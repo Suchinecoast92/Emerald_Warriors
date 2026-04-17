@@ -5,6 +5,7 @@ import emeraldwarriors.entity.ai.EmeraldCrossbowAttackGoal;
 import emeraldwarriors.horn.HornGroupManager;
 import emeraldwarriors.entity.ai.EmeraldBowAttackGoal;
 import emeraldwarriors.entity.ai.EmeraldFollowOwnerGoal;
+import emeraldwarriors.entity.ai.EmeraldHurtByTargetGoal;
 import emeraldwarriors.entity.ai.EmeraldMeleeAttackGoal;
 import emeraldwarriors.entity.ai.EmeraldProtectOwnerGoal;
 import emeraldwarriors.entity.ai.GuardPositionGoal;
@@ -47,10 +48,10 @@ import net.minecraft.world.entity.ai.navigation.PathNavigation;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import java.util.List;
+import java.util.Optional;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
 import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
-import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
 import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.monster.CrossbowAttackMob;
 import net.minecraft.world.entity.monster.Monster;
@@ -79,8 +80,8 @@ import net.minecraft.world.level.ServerLevelAccessor;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
 import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.entity.Relative;
-
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.projectile.arrow.AbstractArrow;
@@ -93,6 +94,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     private static final int TICKS_PER_DAY = 24000;
     private static final int CONTRACT_OFFER_TIMEOUT_TICKS = 200; // ~10 segundos
+    private static final int OWNER_DISCIPLINE_WINDOW_TICKS = 600;
 
     private static final EntityDataAccessor<Integer> DATA_RANK_ORDINAL = SynchedEntityData.defineId(EmeraldMercenaryEntity.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Integer> DATA_ORDER_ORDINAL = SynchedEntityData.defineId(EmeraldMercenaryEntity.class, EntityDataSerializers.INT);
@@ -115,6 +117,16 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private int contractTicksRemaining;
     private int contractEmeraldsPerService;
     private int contractDaysPerPurchase;
+
+    private UUID bannedOwnerUuid;
+    private int bannedUntilDay;
+
+    private int ownerDisciplineStrikes;
+    private long ownerDisciplineWindowEndGameTime;
+    private int ownerDisciplineLookTicks;
+    private int ownerDisciplineSlapCountdown;
+    private int disciplineAllowOwnerDamageTicks;
+    private boolean ownerDisciplineCounterWithWeapon;
 
     // Sistema de órdenes
     private MercenaryOrder currentOrder = MercenaryOrder.FOLLOW;
@@ -434,6 +446,11 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             output.putInt("ContractDaysPerPurchase", this.contractDaysPerPurchase);
         }
 
+        if (this.bannedOwnerUuid != null && this.bannedUntilDay > 0) {
+            output.putString("BannedOwner", this.bannedOwnerUuid.toString());
+            output.putInt("BannedUntilDay", this.bannedUntilDay);
+        }
+
         output.putInt("MercenaryXp", this.experience);
         output.putInt("MercenaryMaxXp", this.maxExperience);
 
@@ -462,6 +479,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     protected void readAdditionalSaveData(ValueInput input) {
         super.readAdditionalSaveData(input);
 
+        this.bannedOwnerUuid = null;
+        this.bannedUntilDay = 0;
+
         input.getString("Owner").ifPresent(value -> {
             try {
                 this.ownerUuid = UUID.fromString(value);
@@ -471,6 +491,15 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         });
 
         input.getString("SkinId").ifPresent(value -> this.skinId = value);
+
+        input.getString("BannedOwner").ifPresent(value -> {
+            try {
+                this.bannedOwnerUuid = UUID.fromString(value);
+            } catch (IllegalArgumentException ignored) {
+                this.bannedOwnerUuid = null;
+            }
+        });
+        this.bannedUntilDay = input.getIntOr("BannedUntilDay", this.bannedUntilDay);
 
         this.contractTicksRemaining = input.getIntOr("ContractTicks", this.contractTicksRemaining);
 
@@ -689,7 +718,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         // 1: Mob/jugador que el dueño haya golpeado recientemente
         this.targetSelector.addGoal(1, new OwnerHurtTargetGoal(this));
         // 2: Mob que está pegando al mercenario (autodefensa)
-        this.targetSelector.addGoal(2, new HurtByTargetGoal(this));
+        this.targetSelector.addGoal(2, new EmeraldHurtByTargetGoal(this));
         // 2: Defender aldeanos, mercaderes errantes e iron golems atacados
         this.targetSelector.addGoal(2, new DefendVillagerGoal(this, 32.0));
         // 3: Hostil más cercano (solo en GUARD/PATROL; se añade/quita dinámicamente)
@@ -732,6 +761,148 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     public void setOwner(Player player) {
         this.ownerUuid = player.getUUID();
+    }
+
+    public boolean isDisciplineSlapDamageAllowed() {
+        return this.disciplineAllowOwnerDamageTicks > 0;
+    }
+
+    public void onOwnerMeleeHit(Player owner, boolean ownerUsedWeapon) {
+        if (!(this.level() instanceof ServerLevel sl)) {
+            return;
+        }
+        if (this.ownerUuid == null || !this.ownerUuid.equals(owner.getUUID())) {
+            return;
+        }
+
+        long now = this.level().getGameTime();
+        if (now > this.ownerDisciplineWindowEndGameTime) {
+            this.ownerDisciplineStrikes = 0;
+        }
+        this.ownerDisciplineWindowEndGameTime = now + OWNER_DISCIPLINE_WINDOW_TICKS;
+
+        this.ownerDisciplineStrikes = Math.min(3, this.ownerDisciplineStrikes + 1);
+
+        this.setTarget(null);
+        this.setAggressive(false);
+        this.getNavigation().stop();
+        if (this.isUsingItem()) {
+            this.stopUsingItem();
+        }
+
+        sl.sendParticles(ParticleTypes.ANGRY_VILLAGER,
+                this.getX(), this.getY() + 1.0, this.getZ(),
+                8, 0.4, 0.5, 0.4, 0.0);
+
+        if (this.ownerDisciplineStrikes == 1) {
+            this.ownerDisciplineLookTicks = 10 + this.random.nextInt(11);
+            this.ownerDisciplineSlapCountdown = 0;
+        } else if (this.ownerDisciplineStrikes == 2) {
+            this.ownerDisciplineCounterWithWeapon = ownerUsedWeapon;
+            int lookTicks = 20 + this.random.nextInt(11);
+            this.ownerDisciplineLookTicks = lookTicks;
+            this.ownerDisciplineSlapCountdown = lookTicks;
+
+            ItemStack offhand = this.getOffhandItem();
+            ItemStack main = this.getMainHandItem();
+            if (offhand.is(Items.SHIELD)) {
+                this.startUsingItem(InteractionHand.OFF_HAND);
+                this.reactiveShieldTicks = Math.max(this.reactiveShieldTicks, lookTicks);
+            } else if (main.is(Items.SHIELD)) {
+                this.startUsingItem(InteractionHand.MAIN_HAND);
+                this.reactiveShieldTicks = Math.max(this.reactiveShieldTicks, lookTicks);
+            }
+        } else {
+            this.breakContractFromDiscipline(owner);
+        }
+    }
+
+    private void performOwnerDisciplineSlap() {
+        if (!(this.level() instanceof ServerLevel sl)) {
+            return;
+        }
+        if (this.ownerUuid == null) {
+            return;
+        }
+        Player owner = sl.getPlayerByUUID(this.ownerUuid);
+        if (owner == null || !owner.isAlive()) {
+            return;
+        }
+        if (this.distanceToSqr(owner) > 16.0D) {
+            return;
+        }
+
+        this.swing(InteractionHand.MAIN_HAND);
+        this.disciplineAllowOwnerDamageTicks = 2;
+        if (this.ownerDisciplineCounterWithWeapon) {
+            this.doHurtTarget(sl, owner);
+        } else {
+            owner.hurtServer(sl, this.damageSources().mobAttack(this), 1.0F);
+        }
+    }
+
+    private void breakContractFromDiscipline(Player owner) {
+        if (!(this.level() instanceof ServerLevel sl)) {
+            return;
+        }
+
+        this.bannedOwnerUuid = owner.getUUID();
+        int currentDay = (int) (this.level().getDayTime() / (long) TICKS_PER_DAY);
+        this.bannedUntilDay = currentDay + banDaysByRank(this.getRank());
+
+        this.ownerUuid = null;
+        this.contractTicksRemaining = 0;
+        this.pendingContractPlayer = null;
+        this.attentionPlayer = null;
+        this.attentionTicks = 0;
+
+        this.setTarget(null);
+        this.setAggressive(false);
+        this.getNavigation().stop();
+        if (this.isUsingItem()) {
+            this.stopUsingItem();
+        }
+
+        sl.sendParticles(ParticleTypes.ANGRY_VILLAGER,
+                this.getX(), this.getY() + 1.0, this.getZ(),
+                12, 0.5, 0.6, 0.5, 0.0);
+
+        double dx = this.getX() - owner.getX();
+        double dz = this.getZ() - owner.getZ();
+        double len = Math.sqrt(dx * dx + dz * dz);
+        if (len < 0.001D) {
+            dx = (this.random.nextDouble() - 0.5D);
+            dz = (this.random.nextDouble() - 0.5D);
+            len = Math.sqrt(dx * dx + dz * dz);
+        }
+        dx /= len;
+        dz /= len;
+
+        double dist = 10.0D;
+        double tx = this.getX() + dx * dist + (this.random.nextDouble() - 0.5D) * 4.0D;
+        double tz = this.getZ() + dz * dist + (this.random.nextDouble() - 0.5D) * 4.0D;
+        this.getNavigation().moveTo(tx, this.getY(), tz, 1.1D);
+    }
+
+    private static int banDaysByRank(MercenaryRank rank) {
+        return switch (rank) {
+            case RECRUIT -> 5;
+            case SOLDIER -> 6;
+            case SENTINEL -> 8;
+            case VETERAN -> 10;
+            case ANCIENT_GUARD -> 12;
+        };
+    }
+
+    private boolean isBannedFromContract(Player player) {
+        if (this.bannedOwnerUuid == null) {
+            return false;
+        }
+        if (!this.bannedOwnerUuid.equals(player.getUUID())) {
+            return false;
+        }
+        int currentDay = (int) (this.level().getDayTime() / (long) TICKS_PER_DAY);
+        return currentDay < this.bannedUntilDay;
     }
 
     public MercenaryInventory getMercenaryInventory() {
@@ -861,6 +1032,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                 return;
             }
 
+            if (target instanceof Player p && this.ownerUuid != null && this.ownerUuid.equals(p.getUUID())) {
+                return;
+            }
+
             // Friendly fire prevention: never target another mercenary owned by the same player
             if (target instanceof EmeraldMercenaryEntity otherMerc) {
                 UUID otherOwner = otherMerc.getOwnerUuid();
@@ -907,6 +1082,15 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     public void setMaxExperience(int maxExperience) {
         this.maxExperience = maxExperience;
+    }
+
+    @Override
+    public Vec3 getVehicleAttachmentPoint(net.minecraft.world.entity.Entity vehicle) {
+        // Ajustar el punto de anclaje al vehículo para que el cuerpo quede más bajo
+        // (butt apoyado en el asiento del bote/minecart en vez de flotar ligeramente).
+        Vec3 base = super.getVehicleAttachmentPoint(vehicle);
+        // Subimos el attachment ~0.55 bloques, lo que baja el modelo respecto al asiento.
+        return base.add(0.0D, 0.55D, 0.0D);
     }
 
     // ── CrossbowAttackMob interface ──────────────────────────────────────────
@@ -1046,6 +1230,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             return;
         }
 
+        if (this.isFriendlyInLineOfFire(target)) {
+            return;
+        }
+
         ItemStack bowStack = this.getMainHandItem();
         // Support vanilla bows, crossbows, and mod ranged weapons
         if (!(bowStack.getItem() instanceof ProjectileWeaponItem)) {
@@ -1073,6 +1261,54 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         
         // Consume bow durability (1 per shot, vanilla behavior)
         bowStack.hurtAndBreak(1, this, EquipmentSlot.MAINHAND);
+    }
+
+    public boolean isFriendlyInLineOfFire(LivingEntity target) {
+        if (target == null) {
+            return false;
+        }
+
+        Vec3 start = new Vec3(this.getX(), this.getEyeY(), this.getZ());
+        Vec3 end = new Vec3(target.getX(), target.getEyeY(), target.getZ());
+
+        double minX = Math.min(start.x, end.x);
+        double minY = Math.min(start.y, end.y);
+        double minZ = Math.min(start.z, end.z);
+        double maxX = Math.max(start.x, end.x);
+        double maxY = Math.max(start.y, end.y);
+        double maxZ = Math.max(start.z, end.z);
+
+        AABB search = new AABB(minX, minY, minZ, maxX, maxY, maxZ).inflate(0.6D);
+        double maxDistSqr = start.distanceToSqr(end);
+
+        LivingEntity owner = this.getOwner();
+        if (owner != null && owner.isAlive()) {
+            Optional<Vec3> hit = owner.getBoundingBox().inflate(0.25D).clip(start, end);
+            if (hit.isPresent() && start.distanceToSqr(hit.get()) < maxDistSqr) {
+                return true;
+            }
+        }
+
+        UUID ownerId = this.getOwnerUuid();
+        if (ownerId == null) {
+            return false;
+        }
+
+        for (EmeraldMercenaryEntity other : this.level().getEntitiesOfClass(
+                EmeraldMercenaryEntity.class,
+                search,
+                e -> e != this && ownerId.equals(e.getOwnerUuid())
+        )) {
+            if (!other.isAlive()) {
+                continue;
+            }
+            Optional<Vec3> hit = other.getBoundingBox().inflate(0.25D).clip(start, end);
+            if (hit.isPresent() && start.distanceToSqr(hit.get()) < maxDistSqr) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void applyBowEnchantments(ServerLevel level, ItemStack bowStack, AbstractArrow arrow, float distanceFactor) {
@@ -1119,6 +1355,28 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             if (currentTarget instanceof AbstractVillager || currentTarget instanceof IronGolem) {
                 this.setTarget(null);
                 this.getNavigation().stop();
+            }
+
+            if (this.disciplineAllowOwnerDamageTicks > 0) {
+                this.disciplineAllowOwnerDamageTicks--;
+            }
+
+            if (this.ownerDisciplineLookTicks > 0 && this.ownerUuid != null) {
+                this.setTarget(null);
+                this.setAggressive(false);
+                this.getNavigation().stop();
+                Player p = this.level().getPlayerByUUID(this.ownerUuid);
+                if (p != null) {
+                    this.getLookControl().setLookAt(p, 30.0F, this.getMaxHeadXRot());
+                }
+                this.ownerDisciplineLookTicks--;
+            }
+
+            if (this.ownerDisciplineSlapCountdown > 0) {
+                this.ownerDisciplineSlapCountdown--;
+                if (this.ownerDisciplineSlapCountdown == 0) {
+                    this.performOwnerDisciplineSlap();
+                }
             }
 
             if (this.ownerUuid == null && this.contractTicksRemaining > 0) {
@@ -1827,6 +2085,12 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             }
 
             if (!this.level().isClientSide()) {
+                if (this.ownerUuid == null && !isAdmin && this.isBannedFromContract(player)) {
+                    int currentDay = (int) (this.level().getDayTime() / (long) TICKS_PER_DAY);
+                    int remaining = Math.max(0, this.bannedUntilDay - currentDay);
+                    this.sendContractInfo(player, "No vuelvo a trabajar contigo por " + remaining + " día" + (remaining == 1 ? "" : "s") + ".");
+                    return InteractionResult.CONSUME;
+                }
                 int rate = this.getContractEmeraldsPerService();
                 int daysPerPurchase = this.getContractDaysPerPurchase();
                 // Caso 1: sin dueño → flujo de dos pasos

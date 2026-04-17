@@ -30,7 +30,6 @@ loom {
 
 	runs {
 		client {
-			programArgs "--username", "MOISES"
 		}
 	}
 
