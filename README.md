@@ -4,86 +4,89 @@ Un mod de Minecraft 1.21.11 que añade mercenarios contratables con IA de combat
 
 ## Contexto del Proyecto
 
-Este mod está inspirado en el sistema de mercenarios de TheAncientGuard, adaptado a la arquitectura moderna de Minecraft 1.21.11 con Mojang mappings y el nuevo sistema de EntityRenderStates.
+Este mod está inspirado en el sistema de mercenarios de TheAncientGuard, adaptado a Minecraft 1.21.11 (Mojang mappings) con Fabric.
 
 ## Características Implementadas ✅
 
-### Sistema de Contratación
-- **Contratación de Mercenarios**: Los jugadores pueden contratar mercenarios mediante un sistema de oferta contractual
-- **Timeout de Contrato**: Las ofertas expiran después de 200 ticks (10 segundos)
-- **Persistencia del Dueño**: Los mercenarios recuerdan a su dueño a través de UUIDs
+### Sistema de Contratos (vanilla-friendly)
+- **Oferta de contrato en 2 pasos**: Clic derecho con esmeralda → propuesta; segundo clic dentro de 10s → contratar.
+- **Tarifa y días por compra por rango**: Cada mercenario tiene valores deterministas por UUID dentro de un rango (evita RNG abusivo).
+- **Duración del contrato en ticks**: Se consume con el tiempo y expira.
+- **Mensajes cortos por rango**: Propuestas/aceptaciones estilo vanilla.
 
-### Sistema de Rangos
-- **5 Rangos Disponibles**: RECRUIT, SOLDIER, SERGEANT, CAPTAIN, GENERAL
-- **Sistema de Experiencia**: Los mercenarios ganan EXP por combate
-- **Texturas por Rango**: Cada rango tiene texturas únicas (cobre, hierro, oro, esmeralda, diamante)
+### Rangos (`MercenaryRank`)
+- **5 rangos**:
+  - `RECRUIT`
+  - `SOLDIER`
+  - `SENTINEL`
+  - `VETERAN`
+  - `ANCIENT_GUARD`
+- **Stats por rango**: HP, daño, resistencia al knockback, radios (detección/guardia/patrulla) y distancia máxima de persecución.
+- **Texturas por rango**: Variantes visuales por sufijo (`cobre`, `hierro`, `oro`, `esmeralda`, `diamante`).
 
-### IA de Combate
-- **Melee Attack Goal**: Ataque cuerpo a cuerpo con animación de swing
-- **Protect Owner Goal**: Defiende al dueño cuando es atacado
-- **Follow Owner Goal**: Sigue al dueño cuando se aleja
-- **Target Acquisition**: Ataca mobs hostiles automáticamente
-- **Combat Roles**: Sistema de roles (GUARDIAN, ARCHER) para diferentes estilos de combate
+### Órdenes (`MercenaryOrder`)
+- **FOLLOW**: Sigue al owner; combate defensivo.
+- **GUARD**: Se ancla en un punto y combate dentro de su radio.
+- **PATROL**: Patrulla un área y combate activamente en esa zona.
+- **Shift + clic derecho (dueño)**: Cicla orden FOLLOW → GUARD → PATROL.
 
-### Sistema de Inventario
-- **Inventario Personal**: 12 slots (arma, armadura, bolsa)
-- **Equipamiento Sincronizado**: Items equipados se renderizan en el modelo
-- **GUI Personalizada**: Interfaz para gestionar inventario y ver estadísticas
+### Cuerno de cabra: órdenes por grupo
+- **Shift + clic derecho en mercenario con cuerno (dueño)**: Vincular / desvincular al grupo del cuerno.
+- **Shift + clic derecho al aire con cuerno**: Cambiar la orden almacenada en el cuerno.
+- **Clic derecho normal con cuerno**: Ejecuta la orden del cuerno sobre los mercenarios vinculados (dentro del alcance definido por el sistema).
 
-### Sistema de Renderizado
-- **Modelos Humanoides**: Soporte para modelos Steve y Alex (slim)
-- **Render de Armas**: Las armas equipadas se muestran en las manos
-- **Render de Armadura**: La armadura equipada se muestra sobre el modelo
-- **Texturas Dinámicas**: Cambio de textura según skin ID y rango
+### Inventario y GUI
+- **Inventario del mercenario**: Slots de equipo + bolsa.
+- **Abrir inventario**:
+  - Si el mercenario está contratado: clic derecho con esmeralda (dueño) o clic derecho normal (dueño).
 
-### Sistema de Datos
-- **Sync de Datos**: Sincronización cliente-servidor de estadísticas
-- **Persistencia NBT**: Guardado/carga de datos del mercenario
-- **Entity Data Accessors**: Acceso eficiente a datos sincronizados
+### IA de combate (melee / arco / ballesta)
+- **Melee / Ranged goals**: IA separada para melee, arco y ballesta.
+- **Evita friendly fire (disparo/posicionamiento)**:
+  - Mercenarios intentan no disparar si un aliado/owner está en línea de tiro.
+  - Reposicionamiento táctico para ranged contra mobs.
+- **Anti-clumping**:
+  - Melee y ranged tienden a separarse alrededor del objetivo para no apilarse.
 
-## En Progreso 🚧
+### PvP: persecución más "vanilla" al defender al owner
+- **Velocidad mínima vs jugadores**: persecución más consistente.
+- **Recalculo de path más frecuente vs jugadores**: menos exploit por zigzag.
+- **Leash por rango**: si se aleja demasiado de su ancla, rompe persecución y regresa.
+  - Contra jugadores: el leash se amplía (multiplicador) para que la defensa sea útil.
 
-### Sistema de Experiencia y Niveles
-- **Ganancia de EXP**: Por derrotar mobs hostiles
-- **Sistema de Niveles**: Progresión entre rangos
-- **Bonificaciones por Rango**: Mejoras de estadísticas según nivel
+### Raids: comportamiento contextual
+- **Detección robusta de raid** (con caché) para evitar coste por tick.
+- **Multiplicadores durante raid**:
+  - Aceptación de targets y distancias ampliadas.
+  - Persecución ampliada durante combate de raid.
 
-### Persistencia Avanzada
-- **Persistencia de Inventario**: Guardar/cargar items del mercenario
-- **Persistencia de Contrato**: Estado del contrato al reiniciar servidor
-- **Backup de Datos**: Recuperación de datos corruptos
+### Disciplina del owner (anti-abuso, vanilla-friendly)
+- **Ventana de strikes**: 600 ticks (30s).
+- **Strike 1**: mira al owner + `angry_villager`.
+- **Strike 2**: mira + `angry_villager` + levanta escudo si tiene + contraataque:
+  - Si el owner golpeó con "mano vacía" (no-arma): slap fijo (1.0F).
+  - Si el owner golpeó con arma real: devuelve golpe usando el arma del mercenario.
+- **Strike 3**: rompe contrato + se retira + aplica ban de recontrato al ex-owner (por días de Minecraft) según rango.
+- **Ban por rango (días de Minecraft)**:
+  - `RECRUIT`: 5
+  - `SOLDIER`: 6
+  - `SENTINEL`: 8
+  - `VETERAN`: 10
+  - `ANCIENT_GUARD`: 12
+- **Definición de "arma real" (para el counter del strike 2)**:
+  - Se considera arma si el ítem en `mainHand` aporta daño de ataque (`ATTACK_DAMAGE`) > 1 (o es arco/ballesta).
+  - Si no aporta daño real (bloques/comida/etc.), se trata como "mano vacía".
+- **Regla dura**: el mercenario nunca debe seleccionar como target a su owner actual.
 
-## Por Implementar 📋
+## Roadmap / Pendiente 📋
 
-### Sistema de Economía
-- **Costos de Contratación**: Diferentes precios por rango
-- **Pagos por Servicios**: Salarios periódicos
-- **Sistema de Recontratación**: Renovación de contratos
-
-### IA Avanzada
-- **Archer AI**: Sistema de combate a distancia con arcos/ballestas
-- **Tactical AI**: Estrategias de combate avanzadas
-- **Formation AI**: Movimiento coordinado en grupos
-
-### Sistema de Equipamiento
-- **Durabilidad de Items**: Desgaste natural del equipo
-- **Reparación de Equipamiento**: Sistema de mantenimiento
-- **Mejoras de Equipo**: Encantamientos y mejoras
-
-### Interfaz de Usuario
-- **Panel de Comandos**: GUI para dar órdenes específicas
-- **Sistema de Gestión**: Administración de múltiples mercenarios
-- **Estadísticas Detalladas**: Informes de combate y progreso
-
-### Sistema de Misiones
-- **Quest System**: Misiones asignables a mercenarios
-- **Recompensas**: Premios por completar objetivos
-- **Reputación**: Sistema de fama/infamia
-
-### Multiplayer
-- **Clan System**: Agrupación de jugadores con mercenarios compartidos
-- **PvP Balance**: Balance para combate entre jugadores con mercenarios
-- **Leaderboards**: Tablas de clasificación competitivas
+- **Renovar contrato**: permitir añadir días si ya está contratado (hoy se abre inventario y no se puede comprar más tiempo).
+- **Balance/config**:
+  - Ajustar valores de ban por rango a los definitivos.
+  - Exponer valores (ban, leash, etc.) vía config si se desea.
+- **Disciplina vs daño indirecto**: decidir si aplica disciplina también a proyectiles/AOE del owner (hoy es melee directo).
+- **Retirada tras ruptura**: hacer el "retreat" más robusto (buscar posiciones seguras si hay obstáculos).
+- **QA / pruebas**: checklist de regresión para PvP, raid y disciplina (multi-cliente).
 
 ## Arquitectura Técnica
 
@@ -97,6 +100,7 @@ emeraldwarriors/
 │   ├── render/            # Renderers
 │   ├── model/             # Modelos 3D
 │   └── gui/               # Interfaces
+├── horn/                   # Sistema de cuerno (grupos / órdenes)
 ├── inventory/             # Sistema de inventario
 ├── mercenary/             # Enums y datos
 └── menu/                  # Menus y containers
@@ -106,7 +110,8 @@ emeraldwarriors/
 - **Minecraft 1.21.11**: Versión objetivo
 - **Fabric Loader**: Carga de mods
 - **Mojang Mappings**: Nomenclatura oficial
-- **EntityRenderStates**: Nuevo sistema de renderizado
+- **Fabric API**: Eventos y utilidades
+- **EntityRenderStates**: Sistema moderno de renderizado
 
 ## Instalación
 
@@ -128,4 +133,4 @@ Este mod está desarrollado como de aprendizaje de la API de Minecraft 1.21.11.
 
 ---
 
-**Estado Actual**: Alpha funcional con sistema básico de mercenarios implementado.
+**Estado Actual**: Alpha funcional con mercenarios contratables, órdenes, IA de combate y sistema de disciplina del owner.
