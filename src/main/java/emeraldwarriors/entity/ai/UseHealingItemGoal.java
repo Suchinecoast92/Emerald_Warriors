@@ -9,7 +9,9 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -31,10 +33,11 @@ public class UseHealingItemGoal extends Goal {
     private static final ResourceKey<MobEffect> REGENERATION_KEY =
             ResourceKey.create(Registries.MOB_EFFECT, Identifier.withDefaultNamespace("regeneration"));
 
-    private static final int OUT_OF_COMBAT_COOLDOWN = 200; // 10 s between out-of-combat uses
+    private static final int OUT_OF_COMBAT_COOLDOWN = 400; // 20 s between out-of-combat uses
 
     private final EmeraldMercenaryEntity mercenary;
     private ItemStack savedWeapon = ItemStack.EMPTY;
+    private ItemStack consumedItem = ItemStack.EMPTY;
     private int healSlot = -1;
     private int cooldown = 0;
     private boolean consuming = false;
@@ -85,24 +88,49 @@ public class UseHealingItemGoal extends Goal {
 
         inv.setItem(MercenaryInventory.SLOT_MAIN_HAND, healItem);
 
+        this.consumedItem = healItem.copy();
+
         this.mercenary.startUsingItem(InteractionHand.MAIN_HAND);
         this.consuming = true;
     }
 
     @Override
     public void stop() {
-        if (this.mercenary.isUsingItem()) {
-            ItemStack currentMain = this.mercenary.getMercenaryInventory()
-                    .getItem(MercenaryInventory.SLOT_MAIN_HAND);
-            this.mercenary.stopUsingItem();
-            if (!currentMain.isEmpty() && isHealingItem(currentMain)) {
-                returnToBag(currentMain);
+        ItemStack toReturn = ItemStack.EMPTY;
+        boolean didConsume = false;
+        if (this.consuming) {
+            ItemStack currentMain = this.mercenary.getMercenaryInventory().getItem(MercenaryInventory.SLOT_MAIN_HAND);
+            if (!currentMain.isEmpty()) {
+                if (isOutOfCombatHealingItem(currentMain)
+                        || currentMain.is(Items.GLASS_BOTTLE)
+                        || currentMain.is(Items.BOWL)) {
+                    toReturn = currentMain.copy();
+                }
+            } else {
+                didConsume = true;
+            }
+
+            if (currentMain.is(Items.GLASS_BOTTLE) || currentMain.is(Items.BOWL)) {
+                didConsume = true;
             }
         }
 
+        if (this.mercenary.isUsingItem()) {
+            this.mercenary.stopUsingItem();
+        }
         this.mercenary.getMercenaryInventory()
                 .setItem(MercenaryInventory.SLOT_MAIN_HAND, this.savedWeapon);
+
+        if (!toReturn.isEmpty()) {
+            returnToBag(toReturn);
+        }
+
+        if (didConsume && !this.consumedItem.isEmpty() && isSafeFood(this.consumedItem) && !isHealingItem(this.consumedItem)) {
+            this.mercenary.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 200, 0, false, false));
+        }
+
         this.savedWeapon = ItemStack.EMPTY;
+        this.consumedItem = ItemStack.EMPTY;
         this.healSlot = -1;
         this.consuming = false;
         this.cooldown = OUT_OF_COMBAT_COOLDOWN;
@@ -126,7 +154,7 @@ public class UseHealingItemGoal extends Goal {
         MercenaryInventory inv = this.mercenary.getMercenaryInventory();
         for (int i = MercenaryInventory.SLOT_BAG_START; i < MercenaryInventory.SIZE; i++) {
             ItemStack stack = inv.getItem(i);
-            if (!stack.isEmpty() && isHealingItem(stack)) {
+            if (!stack.isEmpty() && isOutOfCombatHealingItem(stack)) {
                 if (excludeEnchantedApple && stack.getItem() == Items.ENCHANTED_GOLDEN_APPLE) {
                     continue;
                 }
@@ -134,6 +162,22 @@ public class UseHealingItemGoal extends Goal {
             }
         }
         return -1;
+    }
+
+    private static boolean isSafeFood(ItemStack stack) {
+        if (stack.isEmpty()) {
+            return false;
+        }
+        Item item = stack.getItem();
+        if (item == Items.ROTTEN_FLESH || item == Items.POISONOUS_POTATO) {
+            return false;
+        }
+        FoodProperties food = stack.get(DataComponents.FOOD);
+        return food != null;
+    }
+
+    private static boolean isOutOfCombatHealingItem(ItemStack stack) {
+        return isHealingItem(stack) || isSafeFood(stack);
     }
 
     private static boolean isHealingEffect(MobEffectInstance eff) {

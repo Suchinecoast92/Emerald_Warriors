@@ -28,6 +28,9 @@ public class DefendVillagerGoal extends TargetGoal {
 
     @Override
     public boolean canUse() {
+        if (this.mercenary.isNeutralOrder()) {
+            return false;
+        }
         // Only defend if mercenary has an owner (is contracted)
         if (this.mercenary.getOwnerUuid() == null) {
             return false;

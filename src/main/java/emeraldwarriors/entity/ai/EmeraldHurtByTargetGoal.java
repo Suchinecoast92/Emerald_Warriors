@@ -22,10 +22,6 @@ public class EmeraldHurtByTargetGoal extends TargetGoal {
 
     @Override
     public boolean canUse() {
-        if (this.mercenary.isNeutralOrder()) {
-            return false;
-        }
-
         LivingEntity lastHurtBy = this.mercenary.getLastHurtByMob();
         if (lastHurtBy == null || !lastHurtBy.isAlive()) {
             return false;

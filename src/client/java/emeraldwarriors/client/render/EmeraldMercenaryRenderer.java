@@ -48,6 +48,7 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
     public static class MercenaryRenderState extends HumanoidRenderState {
         public Identifier texture = FALLBACK_TEXTURE;
         public boolean slim = false;
+        public boolean contractAdmiring = false;
     }
 
     @Override
@@ -79,6 +80,8 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
         this.model = isSlim ? this.alexModel : this.steveModel;
 
         super.extractRenderState(entity, state, partialTick);
+
+        state.contractAdmiring = entity.isContractAdmiringForRender() && entity.getMainHandItem().is(Items.EMERALD);
 
         // === Forzar poses de uso de items ===
 

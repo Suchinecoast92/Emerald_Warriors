@@ -13,6 +13,13 @@ Este mod está inspirado en el sistema de mercenarios de TheAncientGuard, adapta
 - **Tarifa y días por compra por rango**: Cada mercenario tiene valores deterministas por UUID dentro de un rango (evita RNG abusivo).
 - **Duración del contrato en ticks**: Se consume con el tiempo y expira.
 - **Mensajes cortos por rango**: Propuestas/aceptaciones estilo vanilla.
+- **Renovación de contrato**: Shift + clic derecho con esmeraldas para extender tiempo si ya tiene contrato.
+  - Solo acepta **múltiplos exactos** de la compra base (por ejemplo, si la tarifa es 6 esmeraldas por 3 días, acepta 6/12/18...).
+  - Límite de acumulación: máximo **12 días** almacenados.
+  - Feedback vanilla: el mercenario **"admira"** las esmeraldas antes de finalizar (durante ese tiempo la IA se pausa).
+- **Expiración de contrato**:
+  - Cuando llega a 0, el mercenario se acerca al ex-dueño, envía un mensaje sutil en el chat y luego se retira.
+  - Cambia a orden **NEUTRAL** y re-ancla su zona (patrol center) para quedarse en el mundo sin despawnear.
 
 ### Rangos (`MercenaryRank`)
 - **5 rangos**:
@@ -78,9 +85,25 @@ Este mod está inspirado en el sistema de mercenarios de TheAncientGuard, adapta
   - Si no aporta daño real (bloques/comida/etc.), se trata como "mano vacía".
 - **Regla dura**: el mercenario nunca debe seleccionar como target a su owner actual.
 
+### Persistencia (anti-despawn)
+- El mercenario está marcado como persistente y además se deshabilita explícitamente cualquier despawn por distancia.
+- Solo desaparece si muere (o si un comando/mod externo lo elimina).
+
+## Comandos útiles (pruebas / QA)
+
+> Nota: el `mod_id` es `emerald_warriors`. Si el selector por tipo no funciona en tu entorno, usa `type=!player` + `distance`.
+
+- **Ver ticks restantes del contrato**
+  - `/data get entity @e[type=emerald_warriors:emerald_mercenary,limit=1,sort=nearest] ContractTicks`
+
+- **Forzar expiración rápida (2 segundos aprox.)**
+  - `/data merge entity @e[type=!player,distance=..6,limit=1,sort=nearest] {ContractTicks:40}`
+
+- **Simular "queda 1 día"**
+  - `/data merge entity @e[type=!player,distance=..6,limit=1,sort=nearest] {ContractTicks:24000}`
+
 ## Roadmap / Pendiente 📋
 
-- **Renovar contrato**: permitir añadir días si ya está contratado (hoy se abre inventario y no se puede comprar más tiempo).
 - **Balance/config**:
   - Ajustar valores de ban por rango a los definitivos.
   - Exponer valores (ban, leash, etc.) vía config si se desea.

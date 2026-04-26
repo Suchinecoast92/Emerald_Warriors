@@ -156,7 +156,7 @@ public class RetreatLowHpGoal extends Goal {
                             guard.getX() + 0.5, guard.getY(), guard.getZ() + 0.5, this.speedModifier);
                 }
             }
-            case PATROL -> {
+            case PATROL, NEUTRAL -> {
                 BlockPos center = this.mercenary.getPatrolCenter();
                 if (center != null) {
                     this.mercenary.getNavigation().moveTo(

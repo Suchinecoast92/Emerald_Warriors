@@ -13,6 +13,7 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.animal.golem.IronGolem;
 import net.minecraft.world.entity.npc.villager.AbstractVillager;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.item.BowItem;
 import net.minecraft.world.item.CrossbowItem;
 import net.minecraft.world.item.Item;
@@ -43,13 +44,31 @@ public class Emerald_Warriors implements ModInitializer {
 		// projectiles/attacks from harming villagers or golems (so golems don't retaliate)
 		ServerLivingEntityEvents.ALLOW_DAMAGE.register((entity, source, amount) -> {
 			var attacker = source.getEntity();
-			if (entity instanceof EmeraldMercenaryEntity merc && attacker instanceof Player p) {
+			var direct = source.getDirectEntity();
+			Player responsiblePlayer = null;
+			if (attacker instanceof Player p) {
+				responsiblePlayer = p;
+			} else if (direct instanceof Projectile proj && proj.getOwner() instanceof Player p) {
+				responsiblePlayer = p;
+			}
+			if (entity instanceof EmeraldMercenaryEntity merc && responsiblePlayer != null) {
 				var owner = merc.getOwnerUuid();
-				var direct = source.getDirectEntity();
-				if (owner != null && owner.equals(p.getUUID()) && direct == attacker) {
-					boolean usedWeapon = isWeaponForDiscipline(p.getMainHandItem());
-					merc.onOwnerMeleeHit(p, usedWeapon);
+				if (owner != null && owner.equals(responsiblePlayer.getUUID())) {
+					boolean usedWeapon = isWeaponForDiscipline(responsiblePlayer.getMainHandItem());
+					merc.onOwnerMeleeHit(responsiblePlayer, usedWeapon);
 					return true;
+				}
+			}
+			if (entity instanceof AbstractVillager villager && responsiblePlayer != null) {
+				boolean usedWeapon = isWeaponForDiscipline(responsiblePlayer.getMainHandItem());
+				for (EmeraldMercenaryEntity merc : villager.level().getEntitiesOfClass(EmeraldMercenaryEntity.class,
+							villager.getBoundingBox().inflate(20.0D))) {
+					var owner = merc.getOwnerUuid();
+					if (owner != null && owner.equals(responsiblePlayer.getUUID())) {
+						if (!merc.isNeutralOrder() || merc.hasLineOfSight(villager)) {
+							merc.onOwnerMeleeHit(responsiblePlayer, usedWeapon);
+						}
+					}
 				}
 			}
 			// Block IronGolem → mercenary damage (prevents accidental-hit retaliation)

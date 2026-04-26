@@ -41,9 +41,6 @@ public class EmeraldMeleeAttackGoal extends Goal {
 
     @Override
     public boolean canUse() {
-        if (this.mob.isNeutralOrder()) {
-            return false;
-        }
         long gameTime = this.mob.level().getGameTime();
         if (gameTime - this.lastCanUseCheck < 4L) {
             return false;
@@ -55,6 +52,16 @@ public class EmeraldMeleeAttackGoal extends Goal {
             return false;
         }
 
+        if (this.mob.isNeutralOrder()) {
+            LivingEntity lastHurtBy = this.mob.getLastHurtByMob();
+            if (lastHurtBy == null || lastHurtBy != target) {
+                return false;
+            }
+            if (this.mob.tickCount - this.mob.getLastHurtByMobTimestamp() > 100) {
+                return false;
+            }
+        }
+
         this.path = this.mob.getNavigation().createPath(target, 0);
         if (this.path != null) {
             return true;
@@ -64,12 +71,19 @@ public class EmeraldMeleeAttackGoal extends Goal {
 
     @Override
     public boolean canContinueToUse() {
-        if (this.mob.isNeutralOrder()) {
-            return false;
-        }
         LivingEntity target = this.mob.getTarget();
         if (target == null || !target.isAlive()) {
             return false;
+        }
+
+        if (this.mob.isNeutralOrder()) {
+            LivingEntity lastHurtBy = this.mob.getLastHurtByMob();
+            if (lastHurtBy == null || lastHurtBy != target) {
+                return false;
+            }
+            if (this.mob.tickCount - this.mob.getLastHurtByMobTimestamp() > 100) {
+                return false;
+            }
         }
         if (!this.followingTargetEvenIfNotSeen) {
             return !this.mob.getNavigation().isDone();

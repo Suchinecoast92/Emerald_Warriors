@@ -57,17 +57,35 @@ public class EmeraldCrossbowAttackGoal extends Goal {
 
     @Override
     public boolean canUse() {
-        if (this.mob.isNeutralOrder()) return false;
         LivingEntity target = this.mob.getTarget();
         if (target == null || !target.isAlive()) return false;
+
+        if (this.mob.isNeutralOrder()) {
+            LivingEntity lastHurtBy = this.mob.getLastHurtByMob();
+            if (lastHurtBy == null || lastHurtBy != target) {
+                return false;
+            }
+            if (this.mob.tickCount - this.mob.getLastHurtByMobTimestamp() > 100) {
+                return false;
+            }
+        }
         return isHoldingCrossbow();
     }
 
     @Override
     public boolean canContinueToUse() {
-        if (this.mob.isNeutralOrder()) return false;
         LivingEntity target = this.mob.getTarget();
         if (target == null || !target.isAlive()) return false;
+
+        if (this.mob.isNeutralOrder()) {
+            LivingEntity lastHurtBy = this.mob.getLastHurtByMob();
+            if (lastHurtBy == null || lastHurtBy != target) {
+                return false;
+            }
+            if (this.mob.tickCount - this.mob.getLastHurtByMobTimestamp() > 100) {
+                return false;
+            }
+        }
         return isHoldingCrossbow();
     }
 
