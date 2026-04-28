@@ -31,6 +31,9 @@ public class PatrolAroundPointGoal extends Goal {
         if (this.mercenary.getPatrolCenter() == null) {
             return false;
         }
+        if (this.mercenary.getTarget() != null && this.mercenary.getTarget().isAlive()) {
+            return false;
+        }
         if (this.cooldown > 0) {
             this.cooldown--;
             return false;
@@ -41,8 +44,13 @@ public class PatrolAroundPointGoal extends Goal {
     @Override
     public boolean canContinueToUse() {
         MercenaryOrder order = this.mercenary.getCurrentOrder();
-        return order == MercenaryOrder.PATROL
-                && !this.mercenary.getNavigation().isDone();
+        if (order != MercenaryOrder.PATROL) {
+            return false;
+        }
+        if (this.mercenary.getTarget() != null && this.mercenary.getTarget().isAlive()) {
+            return false;
+        }
+        return !this.mercenary.getNavigation().isDone();
     }
 
     @Override

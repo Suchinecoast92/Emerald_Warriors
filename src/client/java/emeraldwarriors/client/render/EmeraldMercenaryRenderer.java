@@ -11,10 +11,13 @@ import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.entity.HumanoidMobRenderer;
 import net.minecraft.client.renderer.entity.layers.HumanoidArmorLayer;
 import net.minecraft.client.renderer.entity.state.HumanoidRenderState;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.resources.Identifier;
+import net.minecraft.tags.ItemTags;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.item.CrossbowItem;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.Vec3;
 
@@ -81,7 +84,11 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
 
         super.extractRenderState(entity, state, partialTick);
 
-        state.contractAdmiring = entity.isContractAdmiringForRender() && entity.getMainHandItem().is(Items.EMERALD);
+        ItemStack main = entity.getMainHandItem();
+        boolean isAdmireItem = main.is(Items.EMERALD)
+                || main.is(ItemTags.BUNDLES)
+                || main.get(DataComponents.BUNDLE_CONTENTS) != null;
+        state.contractAdmiring = entity.isContractAdmiringForRender() && isAdmireItem;
 
         // === Forzar poses de uso de items ===
 
