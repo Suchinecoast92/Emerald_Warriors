@@ -17,6 +17,14 @@ Este mod está inspirado en el sistema de mercenarios de TheAncientGuard, adapta
   - Solo acepta **múltiplos exactos** de la compra base (por ejemplo, si la tarifa es 6 esmeraldas por 3 días, acepta 6/12/18...).
   - Límite de acumulación: máximo **12 días** almacenados.
   - Feedback vanilla: el mercenario **"admira"** las esmeraldas antes de finalizar (durante ese tiempo la IA se pausa).
+- **Pago con saco/bundle (incluye sacos de colores)**:
+  - Acepta `bundle` si contiene **solo esmeraldas**.
+  - Consume el pago y suelta **cambio** en esmeraldas individuales (estilo piglin).
+  - La animación de admirar muestra el **saco/bundle** cuando se paga con saco.
+- **Beneficios por pagar con saco/bundle**:
+  - Reduce el ban al romper contrato por disciplina.
+  - Otorga un **descuento** para la siguiente compra del mismo jugador (por 1 uso), según rango.
+  - Baja probabilidad de frases "easter egg" al aceptar.
 - **Expiración de contrato**:
   - Cuando llega a 0, el mercenario se acerca al ex-dueño, envía un mensaje sutil en el chat y luego se retira.
   - Cambia a orden **NEUTRAL** y re-ancla su zona (patrol center) para quedarse en el mundo sin despawnear.
@@ -41,6 +49,7 @@ Este mod está inspirado en el sistema de mercenarios de TheAncientGuard, adapta
 - **Shift + clic derecho en mercenario con cuerno (dueño)**: Vincular / desvincular al grupo del cuerno.
 - **Shift + clic derecho al aire con cuerno**: Cambiar la orden almacenada en el cuerno.
 - **Clic derecho normal con cuerno**: Ejecuta la orden del cuerno sobre los mercenarios vinculados (dentro del alcance definido por el sistema).
+- **Limpieza de vínculos**: si un mercenario vinculado muere, se elimina automáticamente de los cuernos para evitar referencias a mercenarios muertos.
 
 ### Inventario y GUI
 - **Inventario del mercenario**: Slots de equipo + bolsa.
@@ -54,6 +63,8 @@ Este mod está inspirado en el sistema de mercenarios de TheAncientGuard, adapta
   - Reposicionamiento táctico para ranged contra mobs.
 - **Anti-clumping**:
   - Melee y ranged tienden a separarse alrededor del objetivo para no apilarse.
+- **Fix de combate melee**: al acercarse al objetivo (especialmente tras recibir proyectiles) no debe quedarse "quieto" fuera de rango; el melee cierra distancia de forma robusta.
+- **Cooldown del mazo (vanilla Mace)**: aplica un cooldown tipo vanilla para evitar spam del arma.
 
 ### PvP: persecución más "vanilla" al defender al owner
 - **Velocidad mínima vs jugadores**: persecución más consistente.
@@ -84,6 +95,14 @@ Este mod está inspirado en el sistema de mercenarios de TheAncientGuard, adapta
   - Se considera arma si el ítem en `mainHand` aporta daño de ataque (`ATTACK_DAMAGE`) > 1 (o es arco/ballesta).
   - Si no aporta daño real (bloques/comida/etc.), se trata como "mano vacía".
 - **Regla dura**: el mercenario nunca debe seleccionar como target a su owner actual.
+
+### UX (chat vs action bar)
+- **Chat**: solo diálogos inmersivos del mercenario.
+- **Action Bar**: información mecánica (contrato iniciado/extendido, ban restante, etc.).
+
+### Curación pasiva cerca de fogata
+- Si está en **NEUTRAL**, fuera de combate y herido, se cura lentamente cerca de una fogata encendida.
+- Alcance: **radio 4** (horizontal) y **±1 bloque** (vertical).
 
 ### Persistencia (anti-despawn)
 - El mercenario está marcado como persistente y además se deshabilita explícitamente cualquier despawn por distancia.
