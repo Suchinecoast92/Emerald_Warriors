@@ -1,6 +1,7 @@
 package emeraldwarriors.client.render;
 
 import emeraldwarriors.Emerald_Warriors;
+import emeraldwarriors.client.model.MercenaryArmorModel;
 import emeraldwarriors.client.model.MercenaryPlayerModel;
 import emeraldwarriors.entity.EmeraldMercenaryEntity;
 import net.minecraft.client.model.HumanoidModel;
@@ -40,7 +41,7 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
         ArmorModelSet<HumanoidModel<MercenaryRenderState>> armorModels = ArmorModelSet.bake(
                 ModelLayers.PLAYER_ARMOR,
                 context.getModelSet(),
-                HumanoidModel::new
+                MercenaryArmorModel::new
         );
         this.addLayer(new HumanoidArmorLayer<>(this, armorModels, context.getEquipmentRenderer()));
     }

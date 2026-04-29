@@ -9,6 +9,7 @@ import emeraldwarriors.entity.ai.EmeraldHurtByTargetGoal;
 import emeraldwarriors.entity.ai.EmeraldMeleeAttackGoal;
 import emeraldwarriors.entity.ai.EmeraldProtectOwnerGoal;
 import emeraldwarriors.entity.ai.GuardPositionGoal;
+import emeraldwarriors.entity.ai.ContractRenewWarningGoal;
 import emeraldwarriors.entity.ai.MercenaryIdleStrollGoal;
 import emeraldwarriors.entity.ai.NeutralWanderGoal;
 import emeraldwarriors.entity.ai.OwnerHurtTargetGoal;
@@ -84,6 +85,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.ServerLevelAccessor;
 import net.minecraft.world.level.storage.ValueInput;
 import net.minecraft.world.level.storage.ValueOutput;
+import net.minecraft.world.level.pathfinder.PathType;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.damagesource.DamageSource;
@@ -120,6 +122,12 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private EmeraldMeleeAttackGoal meleeAttackGoal;
     private EmeraldBowAttackGoal bowAttackGoal;
     private EmeraldCrossbowAttackGoal crossbowAttackGoal;
+
+    private EmeraldProtectOwnerGoal protectOwnerGoal;
+    private OwnerHurtTargetGoal ownerHurtTargetGoal;
+    private EmeraldHurtByTargetGoal hurtByTargetGoal;
+    private DefendVillagerGoal defendVillagerGoal;
+    private NearestAttackableTargetGoal<?> nearestAttackableGoal;
 
     private MercenaryRole lastAppliedRole = null;
     private Boolean lastAppliedHasArrows = null;
@@ -345,8 +353,6 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private static final String[] CONTRACT_END_MESSAGES = new String[] {
             "El trato termina aquí.",
             "Mi servicio concluye.",
-            "Es hora de partir.",
-            "Me retiro.",
             "Hasta la próxima.",
             "Ha sido un honor servirte.",
             "Fue buen combate mientras duró.",
@@ -356,6 +362,14 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             "Mi deber contigo ha finalizado.",
             "Hemos cumplido lo pactado.",
             "El acuerdo llega a su fin."
+    };
+
+    private static final String[] CONTRACT_RENEW_WARN_MESSAGES = new String[] {
+            "El trato está por concluir. ¿Deseas renovarlo?",
+            "Nuestro contrato está por terminar. ¿Deseas continuar?",
+            "Mi servicio está por concluir. ¿Deseas extender el trato?",
+            "El acuerdo termina pronto. ¿Renovaremos?",
+            "Mi tiempo a tu servicio casi concluye. ¿Continuamos?"
     };
 
     // Lista de skins disponibles, alineada con las carpetas reales de texturas en
@@ -374,7 +388,11 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         super(type, level);
         this.setPersistenceRequired();
         this.setCanPickUpLoot(true);
+        this.setPathfindingMalus(PathType.RAIL, 0.0F);
+        this.setPathfindingMalus(PathType.UNPASSABLE_RAIL, 0.0F);
     }
+
+    private boolean contractRenewWarned = false;
 
     @Override
     protected void defineSynchedData(SynchedEntityData.Builder builder) {
@@ -549,6 +567,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             output.putInt("ContractTicks", this.contractTicksRemaining);
         }
 
+        if (this.contractRenewWarned) {
+            output.putInt("ContractRenewWarned", 1);
+        }
+
         output.putString("MercenaryRank", this.getRank().name());
         if (this.contractEmeraldsPerService > 0) {
             output.putInt("ContractRate", this.contractEmeraldsPerService);
@@ -690,6 +712,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         });
 
         this.contractTicksRemaining = input.getIntOr("ContractTicks", this.contractTicksRemaining);
+        this.contractRenewWarned = input.getIntOr("ContractRenewWarned", this.contractRenewWarned ? 1 : 0) != 0;
 
         input.getString("MercenaryRank").ifPresent(value -> {
             try {
@@ -709,6 +732,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
         if (this.ownerUuid == null) {
             this.contractTicksRemaining = 0;
+            this.contractRenewWarned = false;
         }
 
         this.contractAdmireTicks = input.getIntOr("ContractAdmireTicks", this.contractAdmireTicks);
@@ -925,6 +949,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         return CONTRACT_END_MESSAGES[this.random.nextInt(CONTRACT_END_MESSAGES.length)];
     }
 
+    public String randomContractRenewWarnMessage() {
+        return CONTRACT_RENEW_WARN_MESSAGES[this.random.nextInt(CONTRACT_RENEW_WARN_MESSAGES.length)];
+    }
+
     @Override
     protected void registerGoals() {
         // Prioridad 0: Supervivencia básica
@@ -938,6 +966,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
         // Prioridad 1: Usar item de curación cuando tiene poca vida
         this.goalSelector.addGoal(1, new UseHealingItemGoal(this));
+
+        // Prioridad 2: Aviso preventivo de renovación (solo fuera de combate)
+        this.goalSelector.addGoal(2, new ContractRenewWarningGoal(this, 1.0D));
 
         // Prioridad 2: Ataque cuerpo a cuerpo (con animación de swing)
         this.meleeAttackGoal    = new EmeraldMeleeAttackGoal(this, 1.1D, true);
@@ -963,13 +994,13 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
         // Target goals (prioridad de objetivos según diseño)
         // 0: Mob que está pegando al dueño ahora mismo
-        this.targetSelector.addGoal(0, new EmeraldProtectOwnerGoal(this));
+        this.protectOwnerGoal = new EmeraldProtectOwnerGoal(this);
         // 1: Mob/jugador que el dueño haya golpeado recientemente
-        this.targetSelector.addGoal(1, new OwnerHurtTargetGoal(this));
+        this.ownerHurtTargetGoal = new OwnerHurtTargetGoal(this);
         // 2: Mob que está pegando al mercenario (autodefensa)
-        this.targetSelector.addGoal(2, new EmeraldHurtByTargetGoal(this));
+        this.hurtByTargetGoal = new EmeraldHurtByTargetGoal(this);
         // 2: Defender aldeanos, mercaderes errantes e iron golems atacados
-        this.targetSelector.addGoal(2, new DefendVillagerGoal(this, 32.0));
+        this.defendVillagerGoal = new DefendVillagerGoal(this, 32.0);
         // 3: Hostil más cercano (solo en GUARD/PATROL; se añade/quita dinámicamente)
         this.nearestAttackableGoal = new NearestAttackableTargetGoal<>(this, Monster.class, true);
         // Initialized in refreshTargetGoalsByOrder() after goals are registered
@@ -984,16 +1015,36 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.refreshCombatRoleAndGoals();
     }
 
-    private NearestAttackableTargetGoal<?> nearestAttackableGoal;
-
     private void refreshTargetGoalsByOrder() {
-        if (this.level().isClientSide() || this.nearestAttackableGoal == null) return;
-        // Always remove first to avoid duplicates
+        if (this.level().isClientSide()) {
+            return;
+        }
+        if (this.protectOwnerGoal == null
+                || this.ownerHurtTargetGoal == null
+                || this.hurtByTargetGoal == null
+                || this.defendVillagerGoal == null
+                || this.nearestAttackableGoal == null) {
+            return;
+        }
+
         this.targetSelector.removeGoal(this.nearestAttackableGoal);
-        // FOLLOW = defensive only; GUARD/PATROL = proactive combat
+        this.targetSelector.removeGoal(this.protectOwnerGoal);
+        this.targetSelector.removeGoal(this.ownerHurtTargetGoal);
+        this.targetSelector.removeGoal(this.hurtByTargetGoal);
+        this.targetSelector.removeGoal(this.defendVillagerGoal);
+
         MercenaryOrder order = this.getCurrentOrder();
         if (order == MercenaryOrder.GUARD || order == MercenaryOrder.PATROL) {
-            this.targetSelector.addGoal(3, this.nearestAttackableGoal);
+            this.targetSelector.addGoal(0, this.nearestAttackableGoal);
+            this.targetSelector.addGoal(1, this.hurtByTargetGoal);
+            this.targetSelector.addGoal(2, this.defendVillagerGoal);
+            this.targetSelector.addGoal(3, this.protectOwnerGoal);
+            this.targetSelector.addGoal(4, this.ownerHurtTargetGoal);
+        } else {
+            this.targetSelector.addGoal(0, this.protectOwnerGoal);
+            this.targetSelector.addGoal(1, this.ownerHurtTargetGoal);
+            this.targetSelector.addGoal(2, this.hurtByTargetGoal);
+            this.targetSelector.addGoal(2, this.defendVillagerGoal);
         }
     }
 
@@ -1005,6 +1056,27 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     public UUID getOwnerUuid() {
         return this.ownerUuid;
+    }
+
+    public int getContractTicksRemaining() {
+        return this.contractTicksRemaining;
+    }
+
+    public Player getContractOwnerPlayer() {
+        UUID owner = this.ownerUuid;
+        if (owner == null) {
+            return null;
+        }
+        Player p = this.level().getPlayerByUUID(owner);
+        return (p != null && p.isAlive()) ? p : null;
+    }
+
+    public boolean hasSentContractRenewWarning() {
+        return this.contractRenewWarned;
+    }
+
+    public void markSentContractRenewWarning() {
+        this.contractRenewWarned = true;
     }
 
     public LivingEntity getOwner() {
@@ -1368,12 +1440,23 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         float result = super.applyItemBlocking(level, source, amount);
         // Damage the shield proportionally to what was blocked
         float blocked = amount - result;
+        if (blocked <= 0f) {
+            blocked = result;
+        }
         if (blocked > 0f) {
             ItemStack shieldStack = this.getItemBlockingWith();
             if (shieldStack != null && !shieldStack.isEmpty() && shieldStack.isDamageableItem()) {
                 InteractionHand hand = this.getUsedItemHand();
-                EquipmentSlot slot = hand == InteractionHand.MAIN_HAND ? EquipmentSlot.MAINHAND : EquipmentSlot.OFFHAND;
-                shieldStack.hurtAndBreak(Math.max(1, (int) (blocked / 2.0f)), this, slot);
+                EquipmentSlot slot;
+                if (hand == InteractionHand.MAIN_HAND) {
+                    slot = EquipmentSlot.MAINHAND;
+                } else if (hand == InteractionHand.OFF_HAND) {
+                    slot = EquipmentSlot.OFFHAND;
+                } else {
+                    // Fallback (should be rare): damage the equipped shield
+                    slot = this.getOffhandItem().is(Items.SHIELD) ? EquipmentSlot.OFFHAND : EquipmentSlot.MAINHAND;
+                }
+                shieldStack.hurtAndBreak(Math.max(1, 1 + (int) blocked), this, slot);
             }
         }
         return result;
@@ -1424,6 +1507,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             return;
         }
         this.contractTicksRemaining += days * TICKS_PER_DAY;
+        this.contractRenewWarned = false;
     }
 
     @Override
@@ -2803,7 +2887,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         }
     }
 
-    private void sendMercenaryMessage(Player player, String body) {
+    public void sendMercenaryMessage(Player player, String body) {
         if (player instanceof ServerPlayer serverPlayer) {
             Component prefix = Component.literal("[Mercenario] ")
                     .withStyle(ChatFormatting.GREEN);
@@ -2813,7 +2897,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         }
     }
 
-    private void sendContractInfo(Player player, String body) {
+    public void sendContractInfo(Player player, String body) {
         if (player instanceof ServerPlayer serverPlayer) {
             Component message = Component.literal(body)
                     .withStyle(ChatFormatting.GOLD);
