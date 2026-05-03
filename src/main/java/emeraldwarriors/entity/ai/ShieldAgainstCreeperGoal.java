@@ -1,12 +1,17 @@
 package emeraldwarriors.entity.ai;
 
 import emeraldwarriors.entity.EmeraldMercenaryEntity;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.tags.TagKey;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.monster.Creeper;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ShieldItem;
 
 import java.util.EnumSet;
 import java.util.List;
@@ -26,6 +31,24 @@ public class ShieldAgainstCreeperGoal extends Goal {
     // Umbral de hinchamiento del creeper para levantar el escudo (0.0 - 1.0)
     private static final float SWELL_THRESHOLD = 0.5F;
 
+    private static final TagKey<Item> MINECRAFT_SHIELDS = TagKey.create(
+            Registries.ITEM,
+            Identifier.fromNamespaceAndPath("minecraft", "shields")
+    );
+
+    private static boolean isShieldLikeStack(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return false;
+        }
+        if (stack.is(Items.SHIELD)) {
+            return true;
+        }
+        if (stack.getItem() instanceof ShieldItem) {
+            return true;
+        }
+        return stack.is(MINECRAFT_SHIELDS);
+    }
+
     public ShieldAgainstCreeperGoal(EmeraldMercenaryEntity mercenary, double detectionRange) {
         this.mercenary = mercenary;
         this.detectionRange = detectionRange;
@@ -35,7 +58,7 @@ public class ShieldAgainstCreeperGoal extends Goal {
     @Override
     public boolean canUse() {
         ItemStack offhand = this.mercenary.getOffhandItem();
-        if (!offhand.is(Items.SHIELD)) {
+        if (!isShieldLikeStack(offhand)) {
             return false;
         }
 
@@ -68,7 +91,7 @@ public class ShieldAgainstCreeperGoal extends Goal {
     @Override
     public boolean canContinueToUse() {
         ItemStack offhand = this.mercenary.getOffhandItem();
-        if (!offhand.is(Items.SHIELD)) {
+        if (!isShieldLikeStack(offhand)) {
             return false;
         }
         if (this.dangerousCreeper == null || !this.dangerousCreeper.isAlive()) {
@@ -102,7 +125,7 @@ public class ShieldAgainstCreeperGoal extends Goal {
         // === 2. Mantener escudo arriba ===
         if (!this.mercenary.isUsingItem()) {
             ItemStack offhand = this.mercenary.getOffhandItem();
-            if (offhand.is(Items.SHIELD)) {
+            if (isShieldLikeStack(offhand)) {
                 this.mercenary.startUsingItem(InteractionHand.OFF_HAND);
             }
         }

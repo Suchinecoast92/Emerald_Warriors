@@ -9,10 +9,8 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.item.CrossbowItem;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 
 import java.util.EnumSet;
 
@@ -91,6 +89,16 @@ public class EmeraldCrossbowAttackGoal extends Goal {
 
     private boolean isHoldingCrossbow() {
         return this.mob.getMainHandItem().getItem() instanceof CrossbowItem;
+    }
+
+    private net.minecraft.world.InteractionHand getCrossbowHand() {
+        if (this.mob.getMainHandItem().getItem() instanceof CrossbowItem) {
+            return net.minecraft.world.InteractionHand.MAIN_HAND;
+        }
+        if (this.mob.getOffhandItem().getItem() instanceof CrossbowItem) {
+            return net.minecraft.world.InteractionHand.OFF_HAND;
+        }
+        return net.minecraft.world.InteractionHand.MAIN_HAND;
     }
 
     @Override
@@ -190,11 +198,11 @@ public class EmeraldCrossbowAttackGoal extends Goal {
         switch (this.crossbowState) {
             // ── Wait for cooldown, then start charging ──────────────────
             case UNCHARGED -> {
-                if (canSee && inRange) {
+                if (this.attackDelay <= 0) {
                     if (repositioningThisTick) {
                         break;
                     }
-                    InteractionHand hand = ProjectileUtil.getWeaponHoldingHand(this.mob, Items.CROSSBOW);
+                    InteractionHand hand = this.getCrossbowHand();
                     this.mob.startUsingItem(hand);
                     this.mob.setChargingCrossbow(true);
                     this.crossbowState = CrossbowState.CHARGING;
@@ -235,11 +243,11 @@ public class EmeraldCrossbowAttackGoal extends Goal {
             }
             // ── Ready: fire when line of sight is clear ─────────────────
             case READY_TO_ATTACK -> {
-                if (canSee && inRange) {
+                if (this.attackDelay <= 0) {
                     if (repositioningThisTick) {
                         break;
                     }
-                    InteractionHand hand = ProjectileUtil.getWeaponHoldingHand(this.mob, Items.CROSSBOW);
+                    InteractionHand hand = this.getCrossbowHand();
                     float inaccuracy = this.getInaccuracyByRank();
                     if (this.mob.isFriendlyInLineOfFire(target)) {
                         this.strafeRight = !this.strafeRight;
@@ -248,9 +256,15 @@ public class EmeraldCrossbowAttackGoal extends Goal {
                         this.attackDelay = 5;
                         break;
                     }
+
+                    int damageBefore = crossbow.isDamageableItem() ? crossbow.getDamageValue() : 0;
                     ((CrossbowItem) crossbow.getItem()).performShooting(
                             this.mob.level(), this.mob, hand, crossbow,
                             CrossbowItem.MOB_ARROW_POWER, inaccuracy, target);
+
+                    if (this.mob.getOwnerUuid() == null && crossbow.isDamageableItem()) {
+                        crossbow.setDamageValue(damageBefore);
+                    }
                     this.mob.onCrossbowAttackPerformed();
                     this.crossbowState = CrossbowState.UNCHARGED;
                 }

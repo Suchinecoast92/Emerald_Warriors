@@ -5,6 +5,7 @@ import emeraldwarriors.entity.EmeraldMercenaryEntity;
 import emeraldwarriors.entity.ModEntities;
 import emeraldwarriors.horn.MercenaryHornListener;
 import emeraldwarriors.menu.ModMenus;
+import emeraldwarriors.worldgen.ModWorldgen;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
@@ -39,6 +40,7 @@ public class Emerald_Warriors implements ModInitializer {
 		ModEntities.registerAttributes();
 		ModMenus.register();
 		MercenaryHornListener.register();
+		ModWorldgen.register();
 
 		// Prevent Iron Golems from hurting mercenaries, and prevent mercenary
 		// projectiles/attacks from harming villagers or golems (so golems don't retaliate)

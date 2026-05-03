@@ -12,11 +12,13 @@ import emeraldwarriors.entity.ai.GuardPositionGoal;
 import emeraldwarriors.entity.ai.ContractRenewWarningGoal;
 import emeraldwarriors.entity.ai.MercenaryIdleStrollGoal;
 import emeraldwarriors.entity.ai.NeutralWanderGoal;
+import emeraldwarriors.entity.ai.OpenFenceGateGoal;
 import emeraldwarriors.entity.ai.OwnerHurtTargetGoal;
 import emeraldwarriors.entity.ai.PatrolAroundPointGoal;
 import emeraldwarriors.entity.ai.RetreatLowHpGoal;
 import emeraldwarriors.entity.ai.ShieldAgainstCreeperGoal;
 import emeraldwarriors.entity.ai.UseHealingItemGoal;
+import emeraldwarriors.entity.ai.MercenarySleepGoal;
 import emeraldwarriors.inventory.MercenaryInventory;
 import emeraldwarriors.inventory.MercenaryMenu;
 import emeraldwarriors.mercenary.MercenaryOrder;
@@ -62,7 +64,6 @@ import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.monster.CrossbowAttackMob;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.monster.RangedAttackMob;
-import net.minecraft.world.item.CrossbowItem;
 import net.minecraft.world.entity.animal.golem.IronGolem;
 import net.minecraft.world.entity.npc.villager.AbstractVillager;
 import net.minecraft.world.entity.raid.Raider;
@@ -71,14 +72,20 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.item.ArrowItem;
+import net.minecraft.world.item.BowItem;
+import net.minecraft.world.item.CrossbowItem;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.BundleContents;
 import net.minecraft.world.item.ProjectileWeaponItem;
+import net.minecraft.world.item.ShieldItem;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.tags.TagKey;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.Level;
@@ -107,10 +114,18 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private static final int CONTRACT_EXPIRE_RETREAT_DELAY_TICKS = 20;
     private static final double CONTRACT_EXPIRE_RETREAT_SPEED = 0.65D;
 
+    private static final TagKey<Item> MINECRAFT_SHIELDS = TagKey.create(
+            Registries.ITEM,
+            Identifier.fromNamespaceAndPath("minecraft", "shields")
+    );
+
     private static final int CAMPFIRE_HEAL_INTERVAL_TICKS = 80;
     private static final float CAMPFIRE_HEAL_AMOUNT = 1.0F;
     private static final int CAMPFIRE_HEAL_RADIUS = 4;
     private static final int CAMPFIRE_HEAL_Y_RADIUS = 1;
+
+    private static final int SLEEP_HEAL_INTERVAL_TICKS = 100;
+    private static final float SLEEP_HEAL_AMOUNT = 1.0F;
 
     private static final EntityDataAccessor<Integer> DATA_RANK_ORDINAL = SynchedEntityData.defineId(EmeraldMercenaryEntity.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Integer> DATA_ORDER_ORDINAL = SynchedEntityData.defineId(EmeraldMercenaryEntity.class, EntityDataSerializers.INT);
@@ -167,6 +182,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private MercenaryOrder currentOrder = MercenaryOrder.FOLLOW;
     private BlockPos guardPos;
     private BlockPos patrolCenter;
+    private BlockPos boundBedPos;
+    private BlockPos reservedBedPos;
 
     // Progreso de experiencia del mercenario (para futura progresión de rango)
     private int experience;
@@ -186,6 +203,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private int regenerationTicks = 0;
 
     private int campfireHealCooldown = 0;
+
+    private int sleepHealCooldown = 0;
     
     // Pauses EmeraldFollowOwnerGoal when owner is offline or too far (FOLLOW order only)
     private boolean systemForcedNone = false;
@@ -259,6 +278,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private int contractExpireRetreatDelayTicks;
     private boolean contractExpireNotified;
     private Vec3 contractExpireAwayFromPos;
+    private boolean contractExpirePending;
 
     private static final String[] RECRUIT_PROPOSALS = new String[] {
             "Puedo trabajar.",
@@ -390,6 +410,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.setCanPickUpLoot(true);
         this.setPathfindingMalus(PathType.RAIL, 0.0F);
         this.setPathfindingMalus(PathType.UNPASSABLE_RAIL, 0.0F);
+        this.setPathfindingMalus(PathType.DOOR_WOOD_CLOSED, 0.0F);
+        this.setPathfindingMalus(PathType.DOOR_OPEN, 0.0F);
+        this.setPathfindingMalus(PathType.WALKABLE_DOOR, 0.0F);
     }
 
     private boolean contractRenewWarned = false;
@@ -468,6 +491,22 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         return this.patrolCenter;
     }
 
+    public BlockPos getBoundBedPos() {
+        return this.boundBedPos;
+    }
+
+    public void setBoundBedPos(BlockPos pos) {
+        this.boundBedPos = pos;
+    }
+
+    public BlockPos getReservedBedPos() {
+        return this.reservedBedPos;
+    }
+
+    public void setReservedBedPos(BlockPos pos) {
+        this.reservedBedPos = pos;
+    }
+
     public boolean isNeutralOrder() {
         // No neutral order exists in the 3-order system. All orders allow defensive combat.
         // Proactive vs defensive is controlled by refreshTargetGoalsByOrder() (NearestAttackableTargetGoal)
@@ -535,10 +574,237 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.applyRankAttributes();
         this.setHealth(this.getMaxHealth());
 
+        this.applySpawnGearLoadout();
+
         // Orden por defecto: seguir al owner
         this.setCurrentOrder(MercenaryOrder.FOLLOW);
 
         return data;
+    }
+
+    private enum SpawnArmorTier {
+        LEATHER,
+        COPPER,
+        CHAINMAIL,
+        IRON
+    }
+
+    private void applySpawnGearLoadout() {
+        if (this.level().isClientSide()) {
+            return;
+        }
+
+        MercenaryRank rank = this.getRank();
+
+        this.setItemSlot(EquipmentSlot.MAINHAND, ItemStack.EMPTY);
+        this.setItemSlot(EquipmentSlot.OFFHAND, ItemStack.EMPTY);
+        this.setItemSlot(EquipmentSlot.HEAD, ItemStack.EMPTY);
+        this.setItemSlot(EquipmentSlot.CHEST, ItemStack.EMPTY);
+        this.setItemSlot(EquipmentSlot.LEGS, ItemStack.EMPTY);
+        this.setItemSlot(EquipmentSlot.FEET, ItemStack.EMPTY);
+
+        boolean isRanged = this.random.nextFloat() < this.getSpawnRangedChance(rank);
+        if (isRanged) {
+            boolean isCrossbow = this.random.nextFloat() < this.getSpawnCrossbowChance(rank);
+            this.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(isCrossbow ? Items.CROSSBOW : Items.BOW));
+        } else {
+            boolean iron = this.random.nextFloat() < this.getSpawnIronMeleeChance(rank);
+            this.setItemSlot(EquipmentSlot.MAINHAND, new ItemStack(this.rollSpawnMeleeWeaponItem(iron)));
+            if (this.random.nextFloat() < this.getSpawnShieldChance(rank)) {
+                this.setItemSlot(EquipmentSlot.OFFHAND, new ItemStack(Items.SHIELD));
+            }
+        }
+
+        int armorPieces = this.rollSpawnArmorPieceCount(rank);
+        this.applySpawnArmor(rank, armorPieces);
+        this.applySpawnDurabilityDamage(rank);
+        this.refreshCombatRoleAndGoals();
+    }
+
+    private float getSpawnRangedChance(MercenaryRank rank) {
+        return switch (rank) {
+            case RECRUIT -> 0.20F;
+            case SOLDIER -> 0.35F;
+            case SENTINEL -> 0.45F;
+            case VETERAN -> 0.45F;
+            case ANCIENT_GUARD -> 0.35F;
+        };
+    }
+
+    private float getSpawnCrossbowChance(MercenaryRank rank) {
+        return switch (rank) {
+            case RECRUIT -> 0.00F;
+            case SOLDIER -> 0.20F;
+            case SENTINEL -> 0.60F;
+            case VETERAN -> 0.70F;
+            case ANCIENT_GUARD -> 0.70F;
+        };
+    }
+
+    private float getSpawnIronMeleeChance(MercenaryRank rank) {
+        return switch (rank) {
+            case RECRUIT -> 0.00F;
+            case SOLDIER -> 0.20F;
+            case SENTINEL -> 0.65F;
+            case VETERAN -> 0.85F;
+            case ANCIENT_GUARD -> 0.90F;
+        };
+    }
+
+    private float getSpawnShieldChance(MercenaryRank rank) {
+        return switch (rank) {
+            case RECRUIT -> 0.10F;
+            case SOLDIER -> 0.18F;
+            case SENTINEL -> 0.25F;
+            case VETERAN -> 0.35F;
+            case ANCIENT_GUARD -> 0.50F;
+        };
+    }
+
+    private Item rollSpawnMeleeWeaponItem(boolean iron) {
+        int roll = this.random.nextInt(100);
+        if (roll < 50) {
+            return iron ? Items.IRON_SWORD : Items.COPPER_SWORD;
+        }
+        if (roll < 80) {
+            return iron ? Items.IRON_AXE : Items.COPPER_AXE;
+        }
+        return iron ? Items.IRON_SPEAR : Items.COPPER_SPEAR;
+    }
+
+    private int rollSpawnArmorPieceCount(MercenaryRank rank) {
+        int roll = this.random.nextInt(100);
+        return switch (rank) {
+            case RECRUIT -> (roll < 35) ? 0 : (roll < 85) ? 1 : 2;
+            case SOLDIER -> (roll < 45) ? 1 : (roll < 85) ? 2 : 3;
+            case SENTINEL -> (roll < 40) ? 2 : (roll < 85) ? 3 : 4;
+            case VETERAN -> (roll < 25) ? 2 : (roll < 75) ? 3 : 4;
+            case ANCIENT_GUARD -> (roll < 45) ? 3 : 4;
+        };
+    }
+
+    private SpawnArmorTier rollSpawnArmorTierForRank(MercenaryRank rank) {
+        int roll = this.random.nextInt(100);
+        return switch (rank) {
+            case RECRUIT -> (roll < 95) ? SpawnArmorTier.LEATHER : SpawnArmorTier.COPPER;
+            case SOLDIER -> (roll < 55) ? SpawnArmorTier.LEATHER : (roll < 95) ? SpawnArmorTier.COPPER : SpawnArmorTier.CHAINMAIL;
+            case SENTINEL -> (roll < 55) ? SpawnArmorTier.COPPER : (roll < 95) ? SpawnArmorTier.CHAINMAIL : SpawnArmorTier.IRON;
+            case VETERAN -> (roll < 10) ? SpawnArmorTier.COPPER : (roll < 65) ? SpawnArmorTier.CHAINMAIL : SpawnArmorTier.IRON;
+            case ANCIENT_GUARD -> (roll < 5) ? SpawnArmorTier.COPPER : (roll < 30) ? SpawnArmorTier.CHAINMAIL : SpawnArmorTier.IRON;
+        };
+    }
+
+    private void applySpawnArmor(MercenaryRank rank, int pieceCount) {
+        if (pieceCount <= 0) {
+            return;
+        }
+
+        EquipmentSlot[] slots = new EquipmentSlot[]{
+                EquipmentSlot.HEAD, EquipmentSlot.CHEST,
+                EquipmentSlot.LEGS, EquipmentSlot.FEET
+        };
+
+        for (int i = 0; i < slots.length; i++) {
+            int j = i + this.random.nextInt(slots.length - i);
+            EquipmentSlot tmp = slots[i];
+            slots[i] = slots[j];
+            slots[j] = tmp;
+        }
+
+        int pieces = Math.min(pieceCount, slots.length);
+        for (int i = 0; i < pieces; i++) {
+            EquipmentSlot slot = slots[i];
+            SpawnArmorTier tier = this.rollSpawnArmorTierForRank(rank);
+            Item item = this.getArmorItemForTier(tier, slot);
+            if (item != null) {
+                this.setItemSlot(slot, new ItemStack(item));
+            }
+        }
+    }
+
+    private Item getArmorItemForTier(SpawnArmorTier tier, EquipmentSlot slot) {
+        return switch (tier) {
+            case LEATHER -> switch (slot) {
+                case HEAD -> Items.LEATHER_HELMET;
+                case CHEST -> Items.LEATHER_CHESTPLATE;
+                case LEGS -> Items.LEATHER_LEGGINGS;
+                case FEET -> Items.LEATHER_BOOTS;
+                default -> null;
+            };
+            case COPPER -> switch (slot) {
+                case HEAD -> Items.COPPER_HELMET;
+                case CHEST -> Items.COPPER_CHESTPLATE;
+                case LEGS -> Items.COPPER_LEGGINGS;
+                case FEET -> Items.COPPER_BOOTS;
+                default -> null;
+            };
+            case CHAINMAIL -> switch (slot) {
+                case HEAD -> Items.CHAINMAIL_HELMET;
+                case CHEST -> Items.CHAINMAIL_CHESTPLATE;
+                case LEGS -> Items.CHAINMAIL_LEGGINGS;
+                case FEET -> Items.CHAINMAIL_BOOTS;
+                default -> null;
+            };
+            case IRON -> switch (slot) {
+                case HEAD -> Items.IRON_HELMET;
+                case CHEST -> Items.IRON_CHESTPLATE;
+                case LEGS -> Items.IRON_LEGGINGS;
+                case FEET -> Items.IRON_BOOTS;
+                default -> null;
+            };
+        };
+    }
+
+    private void applySpawnDurabilityDamage(MercenaryRank rank) {
+        float minRemaining;
+        float maxRemaining;
+        switch (rank) {
+            case RECRUIT -> {
+                minRemaining = 0.20F;
+                maxRemaining = 0.55F;
+            }
+            case SOLDIER -> {
+                minRemaining = 0.18F;
+                maxRemaining = 0.52F;
+            }
+            case SENTINEL -> {
+                minRemaining = 0.16F;
+                maxRemaining = 0.50F;
+            }
+            case VETERAN -> {
+                minRemaining = 0.14F;
+                maxRemaining = 0.48F;
+            }
+            case ANCIENT_GUARD -> {
+                minRemaining = 0.12F;
+                maxRemaining = 0.45F;
+            }
+            default -> {
+                minRemaining = 0.20F;
+                maxRemaining = 0.55F;
+            }
+        }
+
+        for (EquipmentSlot slot : new EquipmentSlot[]{
+                EquipmentSlot.MAINHAND, EquipmentSlot.OFFHAND,
+                EquipmentSlot.HEAD, EquipmentSlot.CHEST,
+                EquipmentSlot.LEGS, EquipmentSlot.FEET
+        }) {
+            ItemStack stack = this.getItemBySlot(slot);
+            if (stack.isEmpty() || !stack.isDamageableItem()) {
+                continue;
+            }
+
+            int max = stack.getMaxDamage();
+            if (max <= 0) {
+                continue;
+            }
+
+            float remaining = minRemaining + this.random.nextFloat() * (maxRemaining - minRemaining);
+            int damage = (int) ((1.0F - remaining) * (float) max);
+            damage = Math.max(0, Math.min(max - 1, damage));
+            stack.setDamageValue(damage);
+        }
     }
 
     public static AttributeSupplier.Builder createAttributes() {
@@ -570,7 +836,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         if (this.contractRenewWarned) {
             output.putInt("ContractRenewWarned", 1);
         }
-
+        if (this.contractExpirePending) {
+            output.putInt("ContractExpirePending", 1);
+        }
         output.putString("MercenaryRank", this.getRank().name());
         if (this.contractEmeraldsPerService > 0) {
             output.putInt("ContractRate", this.contractEmeraldsPerService);
@@ -641,6 +909,11 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             output.putInt("PatrolCenterY", this.patrolCenter.getY());
             output.putInt("PatrolCenterZ", this.patrolCenter.getZ());
         }
+        if (this.boundBedPos != null) {
+            output.putInt("BoundBedX", this.boundBedPos.getX());
+            output.putInt("BoundBedY", this.boundBedPos.getY());
+            output.putInt("BoundBedZ", this.boundBedPos.getZ());
+        }
 
         for (int i = MercenaryInventory.SLOT_BAG_START; i < MercenaryInventory.SIZE; i++) {
             ItemStack stack = this.mercenaryInventory.getItem(i);
@@ -673,6 +946,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.pendingContractUsedBundle = false;
         this.pendingContractBundlePayerUuid = null;
         this.pendingContractBundleChangeEmeralds = 0;
+        this.contractExpirePending = false;
 
         input.getString("Owner").ifPresent(value -> {
             try {
@@ -713,6 +987,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
         this.contractTicksRemaining = input.getIntOr("ContractTicks", this.contractTicksRemaining);
         this.contractRenewWarned = input.getIntOr("ContractRenewWarned", this.contractRenewWarned ? 1 : 0) != 0;
+        this.contractExpirePending = input.getIntOr("ContractExpirePending", this.contractExpirePending ? 1 : 0) != 0;
 
         input.getString("MercenaryRank").ifPresent(value -> {
             try {
@@ -812,6 +1087,13 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         int pz = input.getIntOr("PatrolCenterZ", Integer.MIN_VALUE);
         if (px != Integer.MIN_VALUE && py != Integer.MIN_VALUE && pz != Integer.MIN_VALUE) {
             this.patrolCenter = new BlockPos(px, py, pz);
+        }
+
+        int bx = input.getIntOr("BoundBedX", Integer.MIN_VALUE);
+        int by = input.getIntOr("BoundBedY", Integer.MIN_VALUE);
+        int bz = input.getIntOr("BoundBedZ", Integer.MIN_VALUE);
+        if (bx != Integer.MIN_VALUE && by != Integer.MIN_VALUE && bz != Integer.MIN_VALUE) {
+            this.boundBedPos = new BlockPos(bx, by, bz);
         }
 
         // Aplicar stats del rango después de cargar
@@ -970,6 +1252,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         // Prioridad 2: Aviso preventivo de renovación (solo fuera de combate)
         this.goalSelector.addGoal(2, new ContractRenewWarningGoal(this, 1.0D));
 
+        // Prioridad 3: Dormir en cama por la noche (solo en orden NEUTRAL)
+        this.goalSelector.addGoal(3, new MercenarySleepGoal(this, 1.0D));
+
         // Prioridad 2: Ataque cuerpo a cuerpo (con animación de swing)
         this.meleeAttackGoal    = new EmeraldMeleeAttackGoal(this, 1.1D, true);
         this.bowAttackGoal      = new EmeraldBowAttackGoal(this, 0.9D, 20, 15.0F);
@@ -985,6 +1270,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.goalSelector.addGoal(4, new NeutralWanderGoal(this, 0.65D));
 
         // Prioridad 5: Abrir puertas y puertas de valla
+        this.goalSelector.addGoal(5, new OpenFenceGateGoal(this));
         this.goalSelector.addGoal(5, new OpenDoorGoal(this, true));
 
         // Prioridad 8-10: Comportamiento idle
@@ -1124,8 +1410,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         }
 
         sl.sendParticles(ParticleTypes.ANGRY_VILLAGER,
-                this.getX(), this.getY() + 1.0, this.getZ(),
-                8, 0.4, 0.5, 0.4, 0.0);
+                this.getX(), this.getY() + 1.0, this.getZ(), 8, 0.4, 0.5, 0.4, 0.0);
 
         if (this.ownerDisciplineStrikes == 1) {
             this.ownerDisciplineLookTicks = 10 + this.random.nextInt(11);
@@ -1139,10 +1424,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
             ItemStack offhand = this.getOffhandItem();
             ItemStack main = this.getMainHandItem();
-            if (offhand.is(Items.SHIELD)) {
+            if (isShieldLikeStack(offhand)) {
                 this.startUsingItem(InteractionHand.OFF_HAND);
                 this.reactiveShieldTicks = Math.max(this.reactiveShieldTicks, slapTicks);
-            } else if (main.is(Items.SHIELD)) {
+            } else if (isShieldLikeStack(main)) {
                 this.startUsingItem(InteractionHand.MAIN_HAND);
                 this.reactiveShieldTicks = Math.max(this.reactiveShieldTicks, slapTicks);
             }
@@ -1214,11 +1499,12 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         }
 
         sl.sendParticles(ParticleTypes.ANGRY_VILLAGER,
-                this.getX(), this.getY() + 1.0, this.getZ(),
-                12, 0.5, 0.6, 0.5, 0.0);
+                this.getX(), this.getY() + 1.0, this.getZ(), 12, 0.5, 0.6, 0.5, 0.0);
 
         this.sendContractInfo(owner, "Disponible nuevamente en " + banDays + " día" + (banDays == 1 ? "" : "s") + ".");
         this.setCurrentOrder(MercenaryOrder.NEUTRAL);
+
+        this.refreshCombatRoleAndGoals();
 
         this.retreatFromExOwner(owner);
     }
@@ -1414,30 +1700,52 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     @Override
     public void hurtArmor(DamageSource source, float amount) {
-        super.hurtArmor(source, amount);
         if (amount > 0.0F && !this.level().isClientSide()) {
             // Reset ANCIENT_GUARD regeneration timer when taking damage
             if (this.getRank() == MercenaryRank.ANCIENT_GUARD) {
                 this.ticksSinceLastDamage = 0;
                 this.regenerationTicks = 0;
             }
-            
-            int armorDmg = Math.max(1, (int) (amount / 4.0F));
-            for (EquipmentSlot slot : new EquipmentSlot[]{
-                    EquipmentSlot.HEAD, EquipmentSlot.CHEST,
-                    EquipmentSlot.LEGS, EquipmentSlot.FEET}) {
-                ItemStack armor = this.getItemBySlot(slot);
-                if (!armor.isEmpty() && armor.isDamageableItem()) {
-                    armor.hurtAndBreak(armorDmg, this, slot);
-                }
+
+            if (this.ownerUuid == null) {
+                return;
             }
-            
         }
+
+        if (this.ownerUuid == null) {
+            return;
+        }
+
+        super.hurtArmor(source, amount);
     }
 
     @Override
     public float applyItemBlocking(ServerLevel level, DamageSource source, float amount) {
+        EquipmentSlot blockingSlot = null;
+        ItemStack blockingBefore = ItemStack.EMPTY;
+        if (this.ownerUuid == null) {
+            InteractionHand hand = this.getUsedItemHand();
+            if (hand == InteractionHand.MAIN_HAND) {
+                blockingSlot = EquipmentSlot.MAINHAND;
+            } else if (hand == InteractionHand.OFF_HAND) {
+                blockingSlot = EquipmentSlot.OFFHAND;
+            }
+            if (blockingSlot != null) {
+                ItemStack st = this.getItemBySlot(blockingSlot);
+                if (!st.isEmpty()) {
+                    blockingBefore = st.copy();
+                }
+            }
+        }
+
         float result = super.applyItemBlocking(level, source, amount);
+
+        if (this.ownerUuid == null) {
+            if (blockingSlot != null && !blockingBefore.isEmpty()) {
+                this.setItemSlot(blockingSlot, blockingBefore);
+            }
+            return result;
+        }
         // Damage the shield proportionally to what was blocked
         float blocked = amount - result;
         if (blocked <= 0f) {
@@ -1454,7 +1762,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                     slot = EquipmentSlot.OFFHAND;
                 } else {
                     // Fallback (should be rare): damage the equipped shield
-                    slot = this.getOffhandItem().is(Items.SHIELD) ? EquipmentSlot.OFFHAND : EquipmentSlot.MAINHAND;
+                    slot = isShieldLikeStack(this.getOffhandItem()) ? EquipmentSlot.OFFHAND : EquipmentSlot.MAINHAND;
                 }
                 shieldStack.hurtAndBreak(Math.max(1, 1 + (int) blocked), this, slot);
             }
@@ -1470,7 +1778,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             ItemStack offHand = this.getOffhandItem();
             
             // Check if has shield equipped
-            if (mainHand.is(Items.SHIELD) || offHand.is(Items.SHIELD)) {
+            if (isShieldLikeStack(mainHand) || isShieldLikeStack(offHand)) {
                 // Anticipate attack - reduce damage by 20%
                 amount *= 0.8f;
                 
@@ -1480,11 +1788,11 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                 
                 // Brief shield raise animation (if not already using item)
                 if (!this.isUsingItem()) {
-                    if (offHand.is(Items.SHIELD)) {
+                    if (isShieldLikeStack(offHand)) {
                         this.startUsingItem(InteractionHand.OFF_HAND);
                         // Stop using shield after a brief moment (will be handled by existing reactive shield code)
                         this.reactiveShieldTicks = Math.max(this.reactiveShieldTicks, 10);
-                    } else if (mainHand.is(Items.SHIELD)) {
+                    } else if (isShieldLikeStack(mainHand)) {
                         this.startUsingItem(InteractionHand.MAIN_HAND);
                         this.reactiveShieldTicks = Math.max(this.reactiveShieldTicks, 10);
                     }
@@ -1595,6 +1903,76 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     }
 
     @Override
+    protected void dropCustomDeathLoot(ServerLevel level, DamageSource source, boolean recentlyHit) {
+        if (this.level().isClientSide()) {
+            return;
+        }
+
+        boolean contracted = this.ownerUuid != null;
+        float overallChance = contracted ? 0.06F : 0.025F;
+        if (this.random.nextFloat() >= overallChance) {
+            return;
+        }
+
+        EquipmentSlot[] pool = new EquipmentSlot[] {
+                EquipmentSlot.MAINHAND, EquipmentSlot.MAINHAND, EquipmentSlot.MAINHAND, EquipmentSlot.MAINHAND,
+                EquipmentSlot.OFFHAND, EquipmentSlot.OFFHAND, EquipmentSlot.OFFHAND,
+                EquipmentSlot.CHEST, EquipmentSlot.CHEST,
+                EquipmentSlot.HEAD,
+                EquipmentSlot.LEGS,
+                EquipmentSlot.FEET
+        };
+
+        ItemStack chosen = ItemStack.EMPTY;
+        EquipmentSlot chosenSlot = EquipmentSlot.MAINHAND;
+        for (int i = 0; i < 12; i++) {
+            EquipmentSlot slot = pool[this.random.nextInt(pool.length)];
+            ItemStack st = this.getItemBySlot(slot);
+            if (st.isEmpty()) {
+                continue;
+            }
+            chosen = st;
+            chosenSlot = slot;
+            break;
+        }
+
+        if (chosen.isEmpty()) {
+            return;
+        }
+
+        ItemStack drop = chosen.copy();
+        this.applySevereDurabilityDamageForDrop(drop, contracted);
+
+        ItemEntity item = new ItemEntity(level, this.getX(), this.getY() + 0.4D, this.getZ(), drop);
+        item.setPickUpDelay(10);
+        level.addFreshEntity(item);
+
+        this.setItemSlot(chosenSlot, ItemStack.EMPTY);
+    }
+
+    private void applySevereDurabilityDamageForDrop(ItemStack stack, boolean contracted) {
+        if (stack.isEmpty() || !stack.isDamageableItem()) {
+            return;
+        }
+
+        int max = stack.getMaxDamage();
+        if (max <= 0) {
+            return;
+        }
+
+        float minRemaining = contracted ? 0.03F : 0.02F;
+        float maxRemaining = contracted ? 0.14F : 0.10F;
+
+        float remaining = minRemaining + this.random.nextFloat() * (maxRemaining - minRemaining);
+        int desiredDamage = (int) ((1.0F - remaining) * (float) max);
+        desiredDamage = Math.max(0, Math.min(max - 1, desiredDamage));
+
+        if (desiredDamage > stack.getDamageValue()) {
+            stack.setDamageValue(desiredDamage);
+        }
+    }
+
+    @Override
     public Vec3 getVehicleAttachmentPoint(net.minecraft.world.entity.Entity vehicle) {
         // Ajustar el punto de anclaje al vehículo para que el cuerpo quede más bajo
         // (butt apoyado en el asiento del bote/minecart en vez de flotar ligeramente).
@@ -1622,6 +2000,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     /** Used by CrossbowItem.tryLoadProjectiles() during stopUsingItem() to consume ammo. */
     @Override
     public ItemStack getProjectile(ItemStack weapon) {
+        if (this.hasInfiniteArrows()) {
+            return new ItemStack(Items.ARROW);
+        }
         int slot = this.findArrowSlotInBag();
         if (slot != -1) {
             return this.mercenaryInventory.getItem(slot);
@@ -1662,6 +2043,45 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         return this.findArrowSlotInBag() != -1;
     }
 
+    private void giveInitialContractArrowsIfNeeded() {
+        if (this.level().isClientSide()) {
+            return;
+        }
+        if (this.ownerUuid == null) {
+            return;
+        }
+
+        ItemStack main = this.getMainHandItem();
+        if (!(main.getItem() instanceof BowItem || main.getItem() instanceof CrossbowItem)) {
+            return;
+        }
+
+        if (this.hasAnyArrowsInBag()) {
+            return;
+        }
+
+        int count = 12 + this.random.nextInt(19);
+        ItemStack arrows = new ItemStack(Items.ARROW, count);
+
+        for (int i = MercenaryInventory.SLOT_BAG_START; i < MercenaryInventory.SIZE; i++) {
+            if (this.mercenaryInventory.getItem(i).isEmpty()) {
+                this.mercenaryInventory.setItem(i, arrows);
+                this.mercenaryInventory.setChanged();
+                return;
+            }
+        }
+
+        if (this.level() instanceof ServerLevel sl) {
+            ItemEntity item = new ItemEntity(sl, this.getX(), this.getY() + 0.8D, this.getZ(), arrows);
+            item.setPickUpDelay(10);
+            sl.addFreshEntity(item);
+        }
+    }
+
+    private boolean hasInfiniteArrows() {
+        return this.ownerUuid == null;
+    }
+
     private ItemStack removeOneArrowFromBag() {
         int slot = this.findArrowSlotInBag();
         if (slot == -1) {
@@ -1684,14 +2104,37 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     private void updateCombatRoleFromEquipment() {
         ItemStack main = this.getMainHandItem();
-        // Support vanilla bows, crossbows, and mod ranged weapons (any ProjectileWeaponItem)
-        boolean hasBow = !main.isEmpty() && main.getItem() instanceof ProjectileWeaponItem;
-        // Ranged combat is always available regardless of off-hand (shield + bow/crossbow is vanilla)
-        if (hasBow) {
+        boolean hasRanged = !main.isEmpty() && (main.getItem() instanceof BowItem || main.getItem() instanceof CrossbowItem);
+        if (hasRanged) {
             this.currentRole = MercenaryRole.ARCHER;
         } else {
             this.currentRole = MercenaryRole.GUARDIAN;
         }
+    }
+
+    private static boolean isShieldLikeStack(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return false;
+        }
+        if (stack.is(Items.SHIELD)) {
+            return true;
+        }
+        if (stack.getItem() instanceof ShieldItem) {
+            return true;
+        }
+        return stack.is(MINECRAFT_SHIELDS);
+    }
+
+    private boolean isInCombatForContractExpire() {
+        LivingEntity target = this.getTarget();
+        if (target != null && target.isAlive()) {
+            return true;
+        }
+        LivingEntity lastHurtBy = this.getLastHurtByMob();
+        if (lastHurtBy != null && lastHurtBy.isAlive() && (this.tickCount - this.getLastHurtByMobTimestamp()) < 40) {
+            return true;
+        }
+        return false;
     }
 
     private void refreshCombatRoleAndGoals() {
@@ -1702,7 +2145,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.updateCombatRoleFromEquipment();
 
         boolean isArcher   = this.currentRole == MercenaryRole.ARCHER;
-        boolean hasArrows  = isArcher && this.hasAnyArrowsInBag();
+        boolean hasArrows  = isArcher && (this.hasInfiniteArrows() || this.hasAnyArrowsInBag());
         boolean isCrossbow = isArcher && this.getMainHandItem().getItem() instanceof CrossbowItem;
 
         if (this.currentRole == this.lastAppliedRole
@@ -1750,9 +2193,14 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             return;
         }
 
-        ItemStack arrowStack = this.removeOneArrowFromBag();
-        if (arrowStack.isEmpty()) {
-            return;
+        ItemStack arrowStack;
+        if (this.hasInfiniteArrows()) {
+            arrowStack = new ItemStack(Items.ARROW);
+        } else {
+            arrowStack = this.removeOneArrowFromBag();
+            if (arrowStack.isEmpty()) {
+                return;
+            }
         }
 
         var arrow = ProjectileUtil.getMobArrow(this, arrowStack, distanceFactor, bowStack);
@@ -1770,7 +2218,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         serverLevel.addFreshEntity(arrow);
         
         // Consume bow durability (1 per shot, vanilla behavior)
-        bowStack.hurtAndBreak(1, this, EquipmentSlot.MAINHAND);
+        if (this.ownerUuid != null) {
+            bowStack.hurtAndBreak(1, this, EquipmentSlot.MAINHAND);
+        }
     }
 
     public boolean isFriendlyInLineOfFire(LivingEntity target) {
@@ -1960,12 +2410,25 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             if (this.ownerUuid == null && this.contractTicksRemaining > 0) {
                 this.contractTicksRemaining = 0;
             }
-            if (!this.isContractAdmiring() && this.contractTicksRemaining > 0 && this.ownerUuid != null) {
-                this.contractTicksRemaining--;
-                if (this.contractTicksRemaining == 0) {
-                    this.onContractExpired();
-                }
-            }
+			if (!this.isContractAdmiring() && this.ownerUuid != null) {
+				if (this.contractExpirePending) {
+					if (!this.isInCombatForContractExpire()) {
+						this.contractExpirePending = false;
+						this.contractTicksRemaining = 0;
+						this.onContractExpired();
+					}
+				} else if (this.contractTicksRemaining > 0) {
+					this.contractTicksRemaining--;
+					if (this.contractTicksRemaining == 0) {
+						if (this.isInCombatForContractExpire()) {
+							this.contractExpirePending = true;
+							this.contractTicksRemaining = 1;
+						} else {
+							this.onContractExpired();
+						}
+					}
+				}
+			}
 
             // --- Owner presence and distance checks (every 20 ticks for performance) ---
             if (this.tickCount % 20 == 0 && this.ownerUuid != null && this.level() instanceof ServerLevel serverLvl) {
@@ -2054,12 +2517,12 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                     ItemStack offhand = this.getOffhandItem();
                     ItemStack main = this.getMainHandItem();
 
-                    if (offhand.is(Items.SHIELD)) {
+                    if (isShieldLikeStack(offhand)) {
                         this.startUsingItem(InteractionHand.OFF_HAND);
-                    } else if (main.is(Items.SHIELD)) {
+                    } else if (isShieldLikeStack(main)) {
                         this.startUsingItem(InteractionHand.MAIN_HAND);
                     }
-                } else if (this.reactiveShieldTicks == 0 && this.getUseItem().is(Items.SHIELD)) {
+                } else if (this.reactiveShieldTicks == 0 && isShieldLikeStack(this.getUseItem())) {
                     this.stopUsingItem();
                 }
             }
@@ -2069,6 +2532,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
             if (this.campfireHealCooldown > 0) {
                 this.campfireHealCooldown--;
+            }
+
+            if (this.sleepHealCooldown > 0) {
+                this.sleepHealCooldown--;
             }
             
             // ANCIENT_GUARD passive regeneration
@@ -2122,6 +2589,16 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                 }
             }
 
+            if (this.getCurrentOrder() == MercenaryOrder.NEUTRAL
+                    && this.isOutOfCombatForHeal()
+                    && this.isSleeping()
+                    && this.getHealth() < this.getMaxHealth()) {
+                if (this.sleepHealCooldown <= 0) {
+                    this.heal(SLEEP_HEAL_AMOUNT);
+                    this.sleepHealCooldown = SLEEP_HEAL_INTERVAL_TICKS;
+                }
+            }
+
             // Note: Out-of-combat healing with inventory items is handled by UseHealingItemGoal
 
             if ((this.getRank() == MercenaryRank.VETERAN || this.getRank() == MercenaryRank.ANCIENT_GUARD)) {
@@ -2158,7 +2635,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         ItemStack main = this.getMainHandItem();
         ItemStack offhand = this.getOffhandItem();
 
-        boolean hasShield = main.is(Items.SHIELD) || offhand.is(Items.SHIELD);
+        boolean hasShield = isShieldLikeStack(main) || isShieldLikeStack(offhand);
         if (!hasShield) {
             return false;
         }
@@ -2294,7 +2771,21 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             return false;
         }
 
+        ItemStack mainHandBefore = ItemStack.EMPTY;
+        if (this.ownerUuid == null) {
+            ItemStack st = this.getMainHandItem();
+            if (!st.isEmpty()) {
+                mainHandBefore = st.copy();
+            }
+        }
+
         boolean result = super.doHurtTarget(level, target);
+
+        if (this.ownerUuid == null) {
+            if (!mainHandBefore.isEmpty()) {
+                this.setItemSlot(EquipmentSlot.MAINHAND, mainHandBefore);
+            }
+        }
 
         if (result) {
             // SENTINEL critical hits - 15% chance for extra damage
@@ -2323,7 +2814,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             
             // Desgastar el arma principal al golpear
             ItemStack mainHand = this.getMainHandItem();
-            if (!mainHand.isEmpty() && mainHand.isDamageableItem()) {
+            if (this.ownerUuid != null && !mainHand.isEmpty() && mainHand.isDamageableItem()) {
                 mainHand.hurtAndBreak(1, this, EquipmentSlot.MAINHAND);
             }
 
@@ -2590,6 +3081,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             return;
         }
 
+        this.contractTicksRemaining = 0;
+        this.contractExpirePending = false;
         UUID exOwner = this.ownerUuid;
         Vec3 awayFrom = this.lastOwnerKnownPos;
         if (exOwner != null) {
@@ -2609,6 +3102,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         }
 
         this.setCurrentOrder(MercenaryOrder.NEUTRAL);
+
+        this.refreshCombatRoleAndGoals();
 
         this.contractExpireNotifyPlayerUuid = exOwner;
         this.contractExpireAwayFromPos = awayFrom;
@@ -2852,6 +3347,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             }
             this.setCurrentOrder(MercenaryOrder.FOLLOW);
             this.addContractDays(pendingDays);
+            this.giveInitialContractArrowsIfNeeded();
+            this.refreshCombatRoleAndGoals();
             this.getNavigation().stop();
             this.setTarget(null);
             this.level().broadcastEntityEvent(this, (byte) 7);

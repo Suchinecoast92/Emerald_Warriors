@@ -26,7 +26,7 @@ public class NeutralWanderGoal extends Goal {
         if (order != MercenaryOrder.NEUTRAL) {
             return false;
         }
-        if (this.mercenary.getPatrolCenter() == null) {
+        if (this.getCenter() == null) {
             return false;
         }
         if (this.mercenary.getTarget() != null && this.mercenary.getTarget().isAlive()) {
@@ -53,7 +53,7 @@ public class NeutralWanderGoal extends Goal {
 
     @Override
     public void start() {
-        BlockPos center = this.mercenary.getPatrolCenter();
+        BlockPos center = this.getCenter();
         if (center == null) {
             return;
         }
@@ -89,4 +89,9 @@ public class NeutralWanderGoal extends Goal {
     public void stop() {
         this.cooldown = 100 + this.mercenary.getRandom().nextInt(121);
      }
+
+    private BlockPos getCenter() {
+        BlockPos bed = this.mercenary.getBoundBedPos();
+        return bed != null ? bed : this.mercenary.getPatrolCenter();
+    }
 }

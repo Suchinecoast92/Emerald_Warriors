@@ -7,9 +7,7 @@ import net.minecraft.util.Mth;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.item.BowItem;
-import net.minecraft.world.item.Items;
 
 import java.util.EnumSet;
 
@@ -233,7 +231,7 @@ public class EmeraldBowAttackGoal extends Goal {
                 if (repositioningThisTick) {
                     return;
                 }
-                this.mob.startUsingItem(ProjectileUtil.getWeaponHoldingHand(this.mob, Items.BOW));
+                this.mob.startUsingItem(net.minecraft.world.InteractionHand.MAIN_HAND);
                 this.useTime = 0;
             }
         }

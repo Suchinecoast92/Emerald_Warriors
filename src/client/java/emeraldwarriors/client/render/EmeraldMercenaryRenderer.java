@@ -13,13 +13,18 @@ import net.minecraft.client.renderer.entity.HumanoidMobRenderer;
 import net.minecraft.client.renderer.entity.layers.HumanoidArmorLayer;
 import net.minecraft.client.renderer.entity.state.HumanoidRenderState;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.tags.ItemTags;
+import net.minecraft.tags.TagKey;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.HumanoidArm;
+import net.minecraft.world.entity.Pose;
 import net.minecraft.world.item.CrossbowItem;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.ShieldItem;
 import net.minecraft.world.phys.Vec3;
 
 import java.util.HashMap;
@@ -28,6 +33,11 @@ import java.util.Map;
 public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercenaryEntity, EmeraldMercenaryRenderer.MercenaryRenderState, MercenaryPlayerModel<EmeraldMercenaryRenderer.MercenaryRenderState>> {
     private static final Identifier FALLBACK_TEXTURE = Identifier.fromNamespaceAndPath(
             Emerald_Warriors.MOD_ID, "textures/entity/mercenary/m1/m1_cobre.png");
+
+    private static final TagKey<Item> MINECRAFT_SHIELDS = TagKey.create(
+            Registries.ITEM,
+            Identifier.fromNamespaceAndPath("minecraft", "shields")
+    );
 
     private final MercenaryPlayerModel<MercenaryRenderState> steveModel;
     private final MercenaryPlayerModel<MercenaryRenderState> alexModel;
@@ -85,6 +95,8 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
 
         super.extractRenderState(entity, state, partialTick);
 
+        state.pose = entity.getPose();
+
         ItemStack main = entity.getMainHandItem();
         boolean isAdmireItem = main.is(Items.EMERALD)
                 || main.is(ItemTags.BUNDLES)
@@ -136,7 +148,7 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
             }
 
             // Escudo en mano principal
-            if (usedHand == InteractionHand.MAIN_HAND && entity.getMainHandItem().is(Items.SHIELD)) {
+            if (usedHand == InteractionHand.MAIN_HAND && isShieldLikeStack(entity.getMainHandItem())) {
                 if (state.mainArm == HumanoidArm.RIGHT) {
                     state.rightArmPose = HumanoidModel.ArmPose.BLOCK;
                 } else {
@@ -145,7 +157,7 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
             }
 
             // Escudo en offhand (caso típico: espada mano principal, escudo en la otra)
-            if (usedHand == InteractionHand.OFF_HAND && entity.getOffhandItem().is(Items.SHIELD)) {
+            if (usedHand == InteractionHand.OFF_HAND && isShieldLikeStack(entity.getOffhandItem())) {
                 if (state.mainArm == HumanoidArm.RIGHT) {
                     state.leftArmPose = HumanoidModel.ArmPose.BLOCK;
                 } else {
@@ -166,6 +178,9 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
     public Vec3 getRenderOffset(MercenaryRenderState state) {
         // Bajar ligeramente el modelo para que la altura visual coincida con la del jugador vanilla
         Vec3 base = super.getRenderOffset(state);
+        if (state.pose == Pose.SLEEPING) {
+            return base.add(0.0D, 0.125D, 0.0D);
+        }
         return base.add(0.0D, -0.1D, 0.0D);
     }
 
@@ -175,5 +190,18 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
         // (getTextureLocation se llama dentro del render, antes de dibujar)
         this.model = state.slim ? this.alexModel : this.steveModel;
         return state.texture;
+    }
+
+    private static boolean isShieldLikeStack(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return false;
+        }
+        if (stack.is(Items.SHIELD)) {
+            return true;
+        }
+        if (stack.getItem() instanceof ShieldItem) {
+            return true;
+        }
+        return stack.is(MINECRAFT_SHIELDS);
     }
 }

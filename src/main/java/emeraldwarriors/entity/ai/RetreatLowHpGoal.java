@@ -19,7 +19,6 @@ import java.util.EnumSet;
  */
 public class RetreatLowHpGoal extends Goal {
 
-    private static final float HEAL_TARGET_FRACTION = 0.75f;
     private static final int HEAL_COOLDOWN_TICKS = 40; // 2s entre usos
 
     private final EmeraldMercenaryEntity mercenary;
@@ -49,7 +48,7 @@ public class RetreatLowHpGoal extends Goal {
         if (!this.mercenary.isAlive()) return false;
         if (this.isHealing && this.mercenary.isUsingItem()) return true;
         float fraction = this.mercenary.getHealth() / this.mercenary.getMaxHealth();
-        return fraction < HEAL_TARGET_FRACTION;
+        return fraction < this.getHealExitFraction();
     }
 
     @Override
@@ -73,7 +72,7 @@ public class RetreatLowHpGoal extends Goal {
                 this.healCooldown = HEAL_COOLDOWN_TICKS;
                 // Try another item if still below target
                 float fraction = this.mercenary.getHealth() / this.mercenary.getMaxHealth();
-                if (fraction < HEAL_TARGET_FRACTION) {
+                if (fraction < this.getHealExitFraction()) {
                     tryStartHealing();
                 }
             }
@@ -133,6 +132,11 @@ public class RetreatLowHpGoal extends Goal {
                 .setItem(MercenaryInventory.SLOT_MAIN_HAND, this.savedWeapon);
         this.savedWeapon = ItemStack.EMPTY;
         this.healSlot = -1;
+    }
+
+    private float getHealExitFraction() {
+        float trigger = (float) this.mercenary.getRank().getRetreatHpFraction();
+        return Math.max(0.55f, trigger + 0.30f);
     }
 
     private int findHealingSlot() {
