@@ -10,6 +10,7 @@ import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.permissions.Permissions;
 
 /**
  * Comando /mercenary para gestionar mercenarios.
@@ -21,6 +22,7 @@ public class MercenaryCommand {
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(Commands.literal("mercenary")
             .then(Commands.literal("addexp")
+                .requires(source -> source.permissions().hasPermission(Permissions.COMMANDS_GAMEMASTER))
                 .then(Commands.argument("amount", IntegerArgumentType.integer(1, 10000))
                     .executes(MercenaryCommand::addExpCommand))));
     }

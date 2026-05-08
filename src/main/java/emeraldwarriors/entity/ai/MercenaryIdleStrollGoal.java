@@ -17,12 +17,18 @@ public class MercenaryIdleStrollGoal extends WaterAvoidingRandomStrollGoal {
         if (this.mercenary.getOwnerUuid() != null) {
             return false;
         }
+        if (this.mercenary.isSleeping()) {
+            return false;
+        }
         return super.canUse();
     }
 
     @Override
     public boolean canContinueToUse() {
         if (this.mercenary.getOwnerUuid() != null) {
+            return false;
+        }
+        if (this.mercenary.isSleeping()) {
             return false;
         }
         return super.canContinueToUse();

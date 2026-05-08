@@ -167,8 +167,34 @@ public class MercenarySleepGoal extends Goal {
         }
 
         if (this.mercenary.isSleeping()) {
+            this.mercenary.getNavigation().stop();
+            this.mercenary.setDeltaMovement(0.0D, 0.0D, 0.0D);
+
+            if (this.mercenary.getTarget() != null) {
+                this.mercenary.stopSleeping();
+                this.cooldown = GIVE_UP_COOLDOWN_TICKS;
+                return;
+            }
+            if (this.mercenary.getLastHurtByMob() != null
+                    && (this.mercenary.tickCount - this.mercenary.getLastHurtByMobTimestamp()) < 20) {
+                this.mercenary.stopSleeping();
+                this.cooldown = GIVE_UP_COOLDOWN_TICKS;
+                return;
+            }
             if (!isBedValid(level, this.bedPos)) {
                 this.mercenary.stopSleeping();
+                this.cooldown = FAIL_COOLDOWN_TICKS;
+                return;
+            }
+
+            double bedDistSqr = this.mercenary.distanceToSqr(
+                    this.bedPos.getX() + 0.5,
+                    this.bedPos.getY(),
+                    this.bedPos.getZ() + 0.5
+            );
+            if (bedDistSqr > 4.0D) {
+                this.mercenary.stopSleeping();
+                this.cooldown = FAIL_COOLDOWN_TICKS;
             }
             return;
         }

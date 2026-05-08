@@ -99,6 +99,9 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
 
         ItemStack main = entity.getMainHandItem();
         boolean isAdmireItem = main.is(Items.EMERALD)
+                || main.is(Items.PAPER)
+                || main.is(Items.BOOK)
+                || main.is(Items.WRITABLE_BOOK)
                 || main.is(ItemTags.BUNDLES)
                 || main.get(DataComponents.BUNDLE_CONTENTS) != null;
         state.contractAdmiring = entity.isContractAdmiringForRender() && isAdmireItem;

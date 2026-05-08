@@ -1,8 +1,10 @@
 package emeraldwarriors;
 
 import emeraldwarriors.command.MercenaryCommand;
+import emeraldwarriors.config.ModConfig;
 import emeraldwarriors.entity.EmeraldMercenaryEntity;
 import emeraldwarriors.entity.ModEntities;
+import emeraldwarriors.entity.spawn.VillageMercenarySpawner;
 import emeraldwarriors.horn.MercenaryHornListener;
 import emeraldwarriors.menu.ModMenus;
 import emeraldwarriors.worldgen.ModWorldgen;
@@ -37,10 +39,15 @@ public class Emerald_Warriors implements ModInitializer {
 		// However, some things (like resources) may still be uninitialized.
 		// Proceed with mild caution.
 
+		ModConfig.load();
+
 		ModEntities.registerAttributes();
 		ModMenus.register();
 		MercenaryHornListener.register();
 		ModWorldgen.register();
+		if (ModConfig.get().toggles.villageSpawns) {
+			VillageMercenarySpawner.register();
+		}
 
 		// Prevent Iron Golems from hurting mercenaries, and prevent mercenary
 		// projectiles/attacks from harming villagers or golems (so golems don't retaliate)

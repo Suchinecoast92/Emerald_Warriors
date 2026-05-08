@@ -2,6 +2,8 @@ package emeraldwarriors.worldgen;
 
 import com.mojang.serialization.Codec;
 import emeraldwarriors.Emerald_Warriors;
+import emeraldwarriors.config.ModConfig;
+import emeraldwarriors.entity.ModEntities;
 import net.fabricmc.fabric.api.tag.convention.v2.ConventionalBiomeTags;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.BlockPos;
@@ -9,6 +11,8 @@ import net.minecraft.core.Direction;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.util.RandomSource;
+import net.minecraft.world.entity.EntitySpawnReason;
+import net.minecraft.world.entity.SpawnPlacements;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.WorldGenLevel;
 import net.minecraft.world.level.block.Blocks;
@@ -36,6 +40,18 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
     public boolean place(FeaturePlaceContext<NoneFeatureConfiguration> context) {
         WorldGenLevel level = context.level();
         RandomSource ctxRandom = context.random();
+
+        var cfg = ModConfig.get();
+        if (!cfg.toggles.camps) {
+            return false;
+        }
+        int chance = cfg.camp.rarityChance;
+        if (chance <= 0) {
+            return false;
+        }
+        if (chance > 1 && ctxRandom.nextInt(chance) != 0) {
+            return false;
+        }
 
         BlockPos origin = context.origin();
         BlockPos center = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, origin);
@@ -76,6 +92,7 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
 
         placeBase(level, center, random);
         placeCampObjects(level, center, facing, random);
+        trySpawnCampMercenaries(level, center, random);
 
         if (FabricLoader.getInstance().isDevelopmentEnvironment()) {
             Identifier biomeId = level.getBiome(center).unwrapKey()
@@ -94,6 +111,32 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
         }
 
         return true;
+    }
+
+    private static void trySpawnCampMercenaries(WorldGenLevel level, BlockPos center, RandomSource random) {
+        int count = 1 + (random.nextFloat() < 0.35F ? 1 : 0);
+
+        for (int i = 0; i < count; i++) {
+            for (int attempts = 0; attempts < 30; attempts++) {
+                int dx = random.nextInt(11) - 5;
+                int dz = random.nextInt(11) - 5;
+                if (Math.abs(dx) <= 1 && Math.abs(dz) <= 1) {
+                    continue;
+                }
+
+                BlockPos surface = level.getHeightmapPos(
+                        Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                        center.offset(dx, 0, dz)
+                );
+
+                if (!SpawnPlacements.checkSpawnRules(ModEntities.EMERALD_MERCENARY, level, EntitySpawnReason.STRUCTURE, surface, random)) {
+                    continue;
+                }
+
+                ModEntities.EMERALD_MERCENARY.spawn(level.getLevel(), surface, EntitySpawnReason.STRUCTURE);
+                break;
+            }
+        }
     }
 
     private record WoodPalette(Block slab, Block fence) {
