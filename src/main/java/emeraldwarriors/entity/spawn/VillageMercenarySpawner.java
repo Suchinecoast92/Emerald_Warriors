@@ -12,6 +12,7 @@ import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.SpawnPlacements;
 import net.minecraft.world.entity.ai.village.poi.PoiManager;
 import net.minecraft.world.entity.ai.village.poi.PoiTypes;
+import net.minecraft.world.entity.npc.villager.AbstractVillager;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.levelgen.Heightmap;
@@ -111,19 +112,11 @@ public final class VillageMercenarySpawner {
                 }
             }
 
-            Optional<BlockPos> bell = level.getPoiManager().findClosest(
-                    holder -> holder.is(PoiTypes.MEETING),
-                    base,
-                    96,
-                    PoiManager.Occupancy.ANY
-            );
-            if (bell.isEmpty()) {
+            Optional<BlockPos> anchor = findVillageAnchor(level, base);
+            if (anchor.isEmpty()) {
                 continue;
             }
-            BlockPos bellPos = bell.get();
-            if (!isNaturalVillageBell(level, bellPos)) {
-                continue;
-            }
+            BlockPos bellPos = anchor.get();
 
             int nearbyAtBell = level.getEntitiesOfClass(
                     EmeraldMercenaryEntity.class,
@@ -170,19 +163,11 @@ public final class VillageMercenarySpawner {
                 }
             }
 
-            Optional<BlockPos> bell = level.getPoiManager().findClosest(
-                    holder -> holder.is(PoiTypes.MEETING),
-                    base,
-                    96,
-                    PoiManager.Occupancy.ANY
-            );
-            if (bell.isEmpty()) {
+            Optional<BlockPos> anchor = findVillageAnchor(level, base);
+            if (anchor.isEmpty()) {
                 continue;
             }
-            BlockPos bellPos = bell.get();
-            if (!isNaturalVillageBell(level, bellPos)) {
-                continue;
-            }
+            BlockPos bellPos = anchor.get();
 
             candidates.add(new BellCandidate(p, bellPos));
         }
@@ -209,6 +194,65 @@ public final class VillageMercenarySpawner {
         }
 
         trySpawnNearBell(level, bellPos);
+    }
+
+    private static Optional<BlockPos> findVillageAnchor(ServerLevel level, BlockPos base) {
+        Optional<BlockPos> bell = level.getPoiManager().findClosest(
+                holder -> holder.is(PoiTypes.MEETING),
+                base,
+                96,
+                PoiManager.Occupancy.ANY
+        );
+        if (bell.isPresent()) {
+            BlockPos bellPos = bell.get();
+            if (isNaturalVillageBell(level, bellPos)) {
+                return bell;
+            }
+        }
+
+        AABB searchBox = new AABB(base).inflate(96.0D, 32.0D, 96.0D);
+        List<AbstractVillager> villagers = level.getEntitiesOfClass(AbstractVillager.class, searchBox, v -> v.isAlive());
+        if (villagers.isEmpty()) {
+            return Optional.empty();
+        }
+
+        AbstractVillager closest = null;
+        double best = Double.MAX_VALUE;
+        double bx = base.getX() + 0.5D;
+        double by = base.getY() + 0.5D;
+        double bz = base.getZ() + 0.5D;
+        for (AbstractVillager v : villagers) {
+            BlockPos vp = v.blockPosition();
+            StructureStart start = level.structureManager().getStructureWithPieceAt(vp, StructureTags.VILLAGE);
+            if (!start.isValid()) {
+                continue;
+            }
+
+            double d = v.distanceToSqr(bx, by, bz);
+            if (d < best) {
+                best = d;
+                closest = v;
+            }
+        }
+        if (closest == null) {
+            return Optional.empty();
+        }
+
+        BlockPos pos = closest.blockPosition();
+        if (!(level.isVillage(pos) || level.isCloseToVillage(pos, 32))) {
+            return Optional.empty();
+        }
+
+        int villagersAtAnchor = level.getEntitiesOfClass(
+                AbstractVillager.class,
+                new AABB(pos).inflate(48.0D, 16.0D, 48.0D),
+                v -> v.isAlive()
+        ).size();
+        if (villagersAtAnchor < 2) {
+            return Optional.empty();
+        }
+
+        return Optional.of(pos);
     }
 
     private static void trySpawnNearBell(ServerLevel level, BlockPos bellPos) {

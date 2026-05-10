@@ -179,6 +179,13 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private int disciplineAllowOwnerDamageTicks;
     private boolean ownerDisciplineCounterWithWeapon;
 
+    private UUID wildVillagerDefenseOffenderUuid;
+    private int wildVillagerDefenseStrikes;
+    private long wildVillagerDefenseWindowEndGameTime;
+    private int wildVillagerDefenseLookTicks;
+    private int wildVillagerDefenseSlapCountdown;
+    private int wildVillagerDefenseAggroTicks;
+
     // Sistema de órdenes
     private MercenaryOrder currentOrder = MercenaryOrder.FOLLOW;
     private BlockPos guardPos;
@@ -1390,6 +1397,13 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.ownerUuid = player.getUUID();
         this.ownerName = player.getGameProfile().name();
         this.lastOwnerKnownPos = player.position();
+
+        this.wildVillagerDefenseOffenderUuid = null;
+        this.wildVillagerDefenseStrikes = 0;
+        this.wildVillagerDefenseWindowEndGameTime = 0L;
+        this.wildVillagerDefenseLookTicks = 0;
+        this.wildVillagerDefenseSlapCountdown = 0;
+        this.wildVillagerDefenseAggroTicks = 0;
     }
 
     private boolean isOwnerPlayer(Player player) {
@@ -1431,6 +1445,62 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     public boolean isDisciplineSlapDamageAllowed() {
         return this.disciplineAllowOwnerDamageTicks > 0;
+    }
+
+    public void onWildVillagerOffenseByPlayer(Player offender) {
+        if (!(this.level() instanceof ServerLevel sl)) {
+            return;
+        }
+        if (offender == null || !offender.isAlive()) {
+            return;
+        }
+        if (this.ownerUuid != null) {
+            return;
+        }
+
+        UUID id = offender.getUUID();
+        long now = this.level().getGameTime();
+
+        if (this.wildVillagerDefenseOffenderUuid == null
+                || !this.wildVillagerDefenseOffenderUuid.equals(id)
+                || now > this.wildVillagerDefenseWindowEndGameTime) {
+            this.wildVillagerDefenseOffenderUuid = id;
+            this.wildVillagerDefenseStrikes = 0;
+        }
+
+        if (now > this.wildVillagerDefenseWindowEndGameTime) {
+            this.wildVillagerDefenseStrikes = 0;
+        }
+        this.wildVillagerDefenseWindowEndGameTime = now + OWNER_DISCIPLINE_WINDOW_TICKS;
+        this.wildVillagerDefenseStrikes = Math.min(3, this.wildVillagerDefenseStrikes + 1);
+
+        this.setTarget(null);
+        this.setAggressive(false);
+        this.getNavigation().stop();
+        if (this.isUsingItem()) {
+            this.stopUsingItem();
+        }
+
+        sl.sendParticles(ParticleTypes.ANGRY_VILLAGER,
+                this.getX(), this.getY() + 1.0, this.getZ(), 8, 0.4, 0.5, 0.4, 0.0);
+
+        if (this.wildVillagerDefenseStrikes == 1) {
+            this.wildVillagerDefenseLookTicks = 10 + this.random.nextInt(11);
+            this.wildVillagerDefenseSlapCountdown = 40;
+            this.wildVillagerDefenseAggroTicks = Math.max(this.wildVillagerDefenseAggroTicks, 200);
+        } else if (this.wildVillagerDefenseStrikes == 2) {
+            int lookTicks = 20 + this.random.nextInt(11);
+            int slapTicks = 60 + this.random.nextInt(21);
+            this.wildVillagerDefenseLookTicks = lookTicks;
+            this.wildVillagerDefenseSlapCountdown = slapTicks;
+            this.wildVillagerDefenseAggroTicks = Math.max(this.wildVillagerDefenseAggroTicks, 1200);
+        } else {
+            this.wildVillagerDefenseLookTicks = 0;
+            this.wildVillagerDefenseSlapCountdown = 0;
+            this.wildVillagerDefenseAggroTicks = Math.max(this.wildVillagerDefenseAggroTicks, 6000);
+            this.setTarget(offender);
+            this.setAggressive(true);
+        }
     }
 
     public void onOwnerMeleeHit(Player owner, boolean ownerUsedWeapon) {
@@ -1508,6 +1578,37 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         } else {
             owner.hurtServer(sl, this.damageSources().mobAttack(this), 1.0F);
         }
+    }
+
+    private void performWildVillagerDefenseSlap() {
+        if (!(this.level() instanceof ServerLevel sl)) {
+            return;
+        }
+        if (this.ownerUuid != null) {
+            return;
+        }
+        if (this.wildVillagerDefenseOffenderUuid == null) {
+            return;
+        }
+        Player offender = sl.getPlayerByUUID(this.wildVillagerDefenseOffenderUuid);
+        if (offender == null || !offender.isAlive()) {
+            return;
+        }
+        if (this.distanceToSqr(offender) > 4.0D) {
+            return;
+        }
+        if (!this.hasLineOfSight(offender)) {
+            return;
+        }
+
+        this.swing(InteractionHand.MAIN_HAND);
+        offender.hurtServer(sl, this.damageSources().mobAttack(this), 1.0F);
+
+        if (this.wildVillagerDefenseAggroTicks <= 0) {
+            this.wildVillagerDefenseAggroTicks = 200;
+        }
+        this.setTarget(offender);
+        this.setAggressive(true);
     }
 
     private void breakContractFromDiscipline(Player owner) {
@@ -2458,6 +2559,76 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                                 this.ownerDisciplineSlapCountdown = 10;
                             }
                         }
+                    }
+                }
+            }
+
+            if (this.ownerUuid == null && !this.isContractAdmiring()) {
+                if (this.wildVillagerDefenseLookTicks > 0 && this.wildVillagerDefenseOffenderUuid != null) {
+                    this.setTarget(null);
+                    this.setAggressive(false);
+                    if (this.wildVillagerDefenseSlapCountdown <= 0) {
+                        this.getNavigation().stop();
+                    }
+
+                    Player offender = this.level().getPlayerByUUID(this.wildVillagerDefenseOffenderUuid);
+                    if (offender != null && offender.isAlive()) {
+                        this.getLookControl().setLookAt(offender, 30.0F, this.getMaxHeadXRot());
+                    }
+                    this.wildVillagerDefenseLookTicks--;
+                }
+
+                if (this.wildVillagerDefenseSlapCountdown > 0 && this.wildVillagerDefenseOffenderUuid != null) {
+                    this.setTarget(null);
+                    this.setAggressive(false);
+
+                    Player offender = this.level().getPlayerByUUID(this.wildVillagerDefenseOffenderUuid);
+                    if (offender == null || !offender.isAlive()) {
+                        this.wildVillagerDefenseSlapCountdown = 0;
+                    } else {
+                        this.getLookControl().setLookAt(offender, 30.0F, this.getMaxHeadXRot());
+                        if (this.distanceToSqr(offender) > 4.0D) {
+                            this.getNavigation().moveTo(offender, 1.2D);
+                        }
+
+                        if (this.distanceToSqr(offender) <= 4.0D && this.hasLineOfSight(offender)) {
+                            this.wildVillagerDefenseSlapCountdown = 0;
+                            this.wildVillagerDefenseLookTicks = 0;
+                            this.getNavigation().stop();
+                            this.performWildVillagerDefenseSlap();
+                        } else {
+                            this.wildVillagerDefenseSlapCountdown--;
+                            if (this.wildVillagerDefenseSlapCountdown == 0) {
+                                if (this.distanceToSqr(offender) <= 4.0D && this.hasLineOfSight(offender)) {
+                                    this.wildVillagerDefenseLookTicks = 0;
+                                    this.getNavigation().stop();
+                                    this.performWildVillagerDefenseSlap();
+                                } else {
+                                    // Keep trying a little longer to reach the offender before slapping
+                                    this.wildVillagerDefenseSlapCountdown = 10;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (this.wildVillagerDefenseAggroTicks > 0 && this.wildVillagerDefenseSlapCountdown <= 0) {
+                    this.wildVillagerDefenseAggroTicks--;
+                    if (this.wildVillagerDefenseOffenderUuid != null) {
+                        Player offender = this.level().getPlayerByUUID(this.wildVillagerDefenseOffenderUuid);
+                        if (offender != null && offender.isAlive()) {
+                            LivingEntity t = this.getTarget();
+                            if (t == null || !t.isAlive() || t != offender) {
+                                this.setTarget(offender);
+                            }
+                            this.setAggressive(true);
+                        }
+                    }
+                    if (this.wildVillagerDefenseAggroTicks <= 0) {
+                        if (this.getTarget() instanceof Player) {
+                            this.setTarget(null);
+                        }
+                        this.setAggressive(false);
                     }
                 }
             }
@@ -3542,6 +3713,13 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.ownerDisciplineSlapCountdown = 0;
         this.disciplineAllowOwnerDamageTicks = 0;
         this.ownerDisciplineCounterWithWeapon = false;
+
+        this.wildVillagerDefenseOffenderUuid = null;
+        this.wildVillagerDefenseStrikes = 0;
+        this.wildVillagerDefenseWindowEndGameTime = 0L;
+        this.wildVillagerDefenseLookTicks = 0;
+        this.wildVillagerDefenseSlapCountdown = 0;
+        this.wildVillagerDefenseAggroTicks = 0;
 
         this.pendingContractAction = PendingContractAction.NONE;
         this.pendingContractOwnerAfterAdmire = null;

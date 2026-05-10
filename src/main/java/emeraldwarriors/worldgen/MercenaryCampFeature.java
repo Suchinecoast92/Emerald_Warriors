@@ -117,10 +117,16 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
         int count = 1 + (random.nextFloat() < 0.35F ? 1 : 0);
 
         for (int i = 0; i < count; i++) {
-            for (int attempts = 0; attempts < 30; attempts++) {
-                int dx = random.nextInt(11) - 5;
-                int dz = random.nextInt(11) - 5;
-                if (Math.abs(dx) <= 1 && Math.abs(dz) <= 1) {
+            // Prefer spawning close to the campfire (center)
+            boolean spawned = false;
+            for (int attempts = 0; attempts < 40; attempts++) {
+                int dx = random.nextInt(9) - 4;   // [-4..4]
+                int dz = random.nextInt(9) - 4;
+                if (dx == 0 && dz == 0) {
+                    continue;
+                }
+                int dist2 = dx * dx + dz * dz;
+                if (dist2 > 16) {
                     continue;
                 }
 
@@ -134,7 +140,31 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
                 }
 
                 ModEntities.EMERALD_MERCENARY.spawn(level.getLevel(), surface, EntitySpawnReason.STRUCTURE);
+                spawned = true;
                 break;
+            }
+
+            // Fallback: if camp objects/terrain block close spawns, use the old wider area
+            if (!spawned) {
+                for (int attempts = 0; attempts < 30; attempts++) {
+                    int dx = random.nextInt(11) - 5;
+                    int dz = random.nextInt(11) - 5;
+                    if (dx == 0 && dz == 0) {
+                        continue;
+                    }
+
+                    BlockPos surface = level.getHeightmapPos(
+                            Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                            center.offset(dx, 0, dz)
+                    );
+
+                    if (!SpawnPlacements.checkSpawnRules(ModEntities.EMERALD_MERCENARY, level, EntitySpawnReason.STRUCTURE, surface, random)) {
+                        continue;
+                    }
+
+                    ModEntities.EMERALD_MERCENARY.spawn(level.getLevel(), surface, EntitySpawnReason.STRUCTURE);
+                    break;
+                }
             }
         }
     }

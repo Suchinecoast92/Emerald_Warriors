@@ -92,7 +92,7 @@ public class ModWorldgen {
                             return false;
                         }
                         BlockPos below = pos.below();
-                        if (reason == EntitySpawnReason.EVENT) {
+                        if (reason == EntitySpawnReason.EVENT || reason == EntitySpawnReason.STRUCTURE) {
                             return !level.getBlockState(below).getCollisionShape(level, below).isEmpty();
                         }
                         if (!level.getBlockState(below).isFaceSturdy(level, below, Direction.UP)) {

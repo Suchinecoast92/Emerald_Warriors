@@ -69,7 +69,9 @@ public class EmeraldMeleeAttackGoal extends Goal {
         if (this.path != null) {
             return true;
         }
-        return this.getAttackReachSqr(target) >= this.mob.distanceToSqr(target.getX(), target.getY(), target.getZ());
+
+        double attackReachSqr = this.getAttackReachSqr(target);
+        return this.isWithinAttackRange(target, attackReachSqr);
     }
 
     @Override
@@ -189,7 +191,7 @@ public class EmeraldMeleeAttackGoal extends Goal {
         // que la explosión lance al mercenario por los aires.
         boolean isCreeper = target instanceof Creeper;
         double attackReachSqr = this.getAttackReachSqr(target);
-        boolean closeEnoughToCreeper = isCreeper && distanceSqr <= attackReachSqr;
+        boolean closeEnoughToCreeper = isCreeper && this.horizontalDistanceSqr(target) <= attackReachSqr;
 
         if ((!isCreeper || !closeEnoughToCreeper)
                 && (this.followingTargetEvenIfNotSeen || this.mob.getSensing().hasLineOfSight(target))
@@ -208,7 +210,9 @@ public class EmeraldMeleeAttackGoal extends Goal {
                 this.ticksUntilNextPathRecalculation += 5;
             }
 
-            boolean movedWithOffset = !isPlayerTarget && this.moveToTargetWithOffset(target, distanceSqr, attackReachSqr, chaseSpeed);
+            boolean movedWithOffset = !isPlayerTarget
+                    && this.shouldMoveToTargetWithOffset(target, distanceSqr, attackReachSqr)
+                    && this.moveToTargetWithOffset(target, distanceSqr, attackReachSqr, chaseSpeed);
             if (!movedWithOffset && !this.mob.getNavigation().moveTo(target, chaseSpeed)) {
                 this.ticksUntilNextPathRecalculation += isPlayerTarget ? 2 : 15;
             }
@@ -222,11 +226,40 @@ public class EmeraldMeleeAttackGoal extends Goal {
         this.ticksUntilNextAttack = Math.max(this.ticksUntilNextAttack - 1, 0);
 
         // Si por el offset quedamos apenas fuera del alcance, no esperar al próximo recálculo
-        if (!closeEnoughToCreeper && distanceSqr > attackReachSqr && this.mob.getNavigation().isDone()) {
+        if (!closeEnoughToCreeper && !this.isWithinAttackRange(target, attackReachSqr) && this.mob.getNavigation().isDone()) {
             this.mob.getNavigation().moveTo(target, chaseSpeed);
         }
 
         this.checkAndPerformAttack(target, distanceSqr);
+    }
+
+    private double horizontalDistanceSqr(LivingEntity target) {
+        double dx = target.getX() - this.mob.getX();
+        double dz = target.getZ() - this.mob.getZ();
+        return dx * dx + dz * dz;
+    }
+
+    private boolean isWithinAttackRange(LivingEntity target, double attackReachSqr) {
+        double dy = Math.abs(target.getY() - this.mob.getY());
+        if (dy > 1.5D) {
+            return false;
+        }
+        return this.horizontalDistanceSqr(target) <= attackReachSqr + 0.25D;
+    }
+
+    private boolean shouldMoveToTargetWithOffset(LivingEntity target, double distanceSqr, double attackReachSqr) {
+        if (distanceSqr > 36.0D) {
+            return false;
+        }
+        if (distanceSqr <= attackReachSqr + 1.0D) {
+            return false;
+        }
+
+        return !this.mob.level().getEntitiesOfClass(
+                EmeraldMercenaryEntity.class,
+                this.mob.getBoundingBox().inflate(3.0D),
+                m -> m != this.mob && m.isAlive() && m.getTarget() == target
+        ).isEmpty();
     }
 
     private boolean moveToTargetWithOffset(LivingEntity target, double distanceSqr, double attackReachSqr, double speed) {
@@ -235,10 +268,13 @@ public class EmeraldMeleeAttackGoal extends Goal {
         }
 
         double radius = 1.2D + (double) (this.mob.getId() % 3) * 0.2D;
-        double maxRadius = Math.sqrt(Math.max(attackReachSqr, 0.0D)) * 0.9D;
-        if (maxRadius > 0.0D) {
-            radius = Math.min(radius, maxRadius);
+        double dy = target.getY() - this.mob.getY();
+        double maxHorizontalSqr = Math.max(attackReachSqr - dy * dy, 0.0D);
+        double maxRadius = Math.sqrt(maxHorizontalSqr) * 0.9D;
+        if (maxRadius <= 0.0D) {
+            return false;
         }
+        radius = Math.min(radius, maxRadius);
         double angle = (double) (this.mob.getId() * 31) * 0.017453292519943295D;
         double x = target.getX() + Math.cos(angle) * radius;
         double z = target.getZ() + Math.sin(angle) * radius;
@@ -257,7 +293,7 @@ public class EmeraldMeleeAttackGoal extends Goal {
     protected void checkAndPerformAttack(LivingEntity target, double distanceSqr) {
         double attackReachSqr = this.getAttackReachSqr(target);
 
-        if (distanceSqr <= attackReachSqr && this.ticksUntilNextAttack <= 0) {
+        if (this.isWithinAttackRange(target, attackReachSqr) && this.ticksUntilNextAttack <= 0) {
             this.resetAttackCooldown();
             // Always trigger swing animation before attacking
             this.mob.swing(InteractionHand.MAIN_HAND);

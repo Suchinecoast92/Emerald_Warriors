@@ -77,6 +77,10 @@ public class Emerald_Warriors implements ModInitializer {
 						if (!merc.isNeutralOrder() || merc.hasLineOfSight(villager)) {
 							merc.onOwnerMeleeHit(responsiblePlayer, usedWeapon);
 						}
+					} else if (owner == null) {
+						if (merc.hasLineOfSight(villager) || merc.distanceToSqr(villager) <= 64.0D) {
+							merc.onWildVillagerOffenseByPlayer(responsiblePlayer);
+						}
 					}
 				}
 			}
