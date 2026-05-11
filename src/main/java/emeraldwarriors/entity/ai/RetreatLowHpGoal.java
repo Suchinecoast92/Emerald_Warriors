@@ -4,6 +4,7 @@ import emeraldwarriors.entity.EmeraldMercenaryEntity;
 import emeraldwarriors.inventory.MercenaryInventory;
 import emeraldwarriors.mercenary.MercenaryOrder;
 import net.minecraft.core.BlockPos;
+import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
@@ -26,8 +27,10 @@ public class RetreatLowHpGoal extends Goal {
 
     private boolean isHealing = false;
     private ItemStack savedWeapon = ItemStack.EMPTY;
-    private int healSlot = -1;
     private int healCooldown = 0;
+
+    private LivingEntity threat;
+    private BlockPos retreatAnchor;
 
     public RetreatLowHpGoal(EmeraldMercenaryEntity mercenary, double speedModifier) {
         this.mercenary = mercenary;
@@ -53,16 +56,26 @@ public class RetreatLowHpGoal extends Goal {
 
     @Override
     public void start() {
+        this.threat = resolveThreat();
+        this.retreatAnchor = resolveRetreatAnchor();
         this.mercenary.setTarget(null);
         this.mercenary.getNavigation().stop();
         this.isHealing = false;
         this.healCooldown = 0;
+        moveToSafePoint();
         tryStartHealing();
     }
 
     @Override
     public void tick() {
         if (this.healCooldown > 0) this.healCooldown--;
+
+        LivingEntity resolvedThreat = resolveThreat();
+        if (resolvedThreat != null && resolvedThreat.isAlive()) {
+            this.threat = resolvedThreat;
+        } else if (this.threat != null && !this.threat.isAlive()) {
+            this.threat = null;
+        }
 
         if (this.isHealing) {
             if (!this.mercenary.isUsingItem()) {
@@ -77,8 +90,14 @@ public class RetreatLowHpGoal extends Goal {
                 }
             }
             // Still consuming: do nothing, wait for animation
+            if (this.mercenary.getNavigation().isDone()) {
+                moveToSafePoint();
+            }
         } else {
             // Retreating toward anchor
+            if (this.healCooldown <= 0) {
+                tryStartHealing();
+            }
             if (this.mercenary.getNavigation().isDone()) {
                 moveToSafePoint();
             }
@@ -95,24 +114,29 @@ public class RetreatLowHpGoal extends Goal {
             this.isHealing = false;
         }
         this.mercenary.getNavigation().stop();
+        this.threat = null;
+        this.retreatAnchor = null;
     }
 
     private void tryStartHealing() {
         if (this.mercenary.isUsingItem()) return;
         if (this.healCooldown > 0) {
-            moveToSafePoint();
+            if (this.mercenary.getNavigation().isDone()) {
+                moveToSafePoint();
+            }
             return;
         }
         int slot = findHealingSlot();
         if (slot == -1) {
             // No items — fall back to retreating
-            moveToSafePoint();
+            if (this.mercenary.getNavigation().isDone()) {
+                moveToSafePoint();
+            }
             return;
         }
 
         MercenaryInventory inv = this.mercenary.getMercenaryInventory();
         this.savedWeapon = inv.getItem(MercenaryInventory.SLOT_MAIN_HAND).copy();
-        this.healSlot = slot;
 
         ItemStack bagStack = inv.getItem(slot);
         ItemStack healItem = bagStack.copyWithCount(1);
@@ -122,7 +146,6 @@ public class RetreatLowHpGoal extends Goal {
         }
         inv.setItem(MercenaryInventory.SLOT_MAIN_HAND, healItem);
 
-        this.mercenary.getNavigation().stop();
         this.mercenary.startUsingItem(InteractionHand.MAIN_HAND);
         this.isHealing = true;
     }
@@ -131,7 +154,6 @@ public class RetreatLowHpGoal extends Goal {
         this.mercenary.getMercenaryInventory()
                 .setItem(MercenaryInventory.SLOT_MAIN_HAND, this.savedWeapon);
         this.savedWeapon = ItemStack.EMPTY;
-        this.healSlot = -1;
     }
 
     private float getHealExitFraction() {
@@ -151,6 +173,16 @@ public class RetreatLowHpGoal extends Goal {
     }
 
     private void moveToSafePoint() {
+        if (this.threat != null && this.threat.isAlive()) {
+            if (moveAwayFromThreat(this.threat)) {
+                return;
+            }
+            if (this.retreatAnchor != null) {
+                this.mercenary.getNavigation().moveTo(
+                        this.retreatAnchor.getX() + 0.5, this.retreatAnchor.getY(), this.retreatAnchor.getZ() + 0.5, this.speedModifier);
+                return;
+            }
+        }
         MercenaryOrder order = this.mercenary.getCurrentOrder();
         switch (order) {
             case GUARD -> {
@@ -175,5 +207,121 @@ public class RetreatLowHpGoal extends Goal {
                 }
             }
         }
+    }
+
+    private BlockPos resolveRetreatAnchor() {
+        MercenaryOrder order = this.mercenary.getCurrentOrder();
+        switch (order) {
+            case GUARD -> {
+                BlockPos guard = this.mercenary.getGuardPos();
+                if (guard != null) {
+                    return guard;
+                }
+            }
+            case PATROL, NEUTRAL -> {
+                BlockPos center = this.mercenary.getPatrolCenter();
+                if (center != null) {
+                    return center;
+                }
+            }
+            default -> {
+            }
+        }
+        return new BlockPos(Mth.floor(this.mercenary.getX()), Mth.floor(this.mercenary.getY()), Mth.floor(this.mercenary.getZ()));
+    }
+
+    private LivingEntity resolveThreat() {
+        LivingEntity t = this.mercenary.getTarget();
+        if (t != null && t.isAlive()) {
+            return t;
+        }
+        LivingEntity lastHurtBy = this.mercenary.getLastHurtByMob();
+        if (lastHurtBy != null && lastHurtBy.isAlive()
+                && (this.mercenary.tickCount - this.mercenary.getLastHurtByMobTimestamp()) < 100) {
+            return lastHurtBy;
+        }
+        return null;
+    }
+
+    private boolean moveAwayFromThreat(LivingEntity threat) {
+        BlockPos anchor = this.retreatAnchor;
+        if (anchor == null) {
+            anchor = new BlockPos(Mth.floor(this.mercenary.getX()), Mth.floor(this.mercenary.getY()), Mth.floor(this.mercenary.getZ()));
+        }
+
+        double ax = anchor.getX() + 0.5;
+        double az = anchor.getZ() + 0.5;
+
+        double dx = ax - threat.getX();
+        double dz = az - threat.getZ();
+        double lenSq = dx * dx + dz * dz;
+        if (lenSq < 1.0E-4) {
+            dx = this.mercenary.getX() - threat.getX();
+            dz = this.mercenary.getZ() - threat.getZ();
+            lenSq = dx * dx + dz * dz;
+        }
+        if (lenSq < 1.0E-4) {
+            return false;
+        }
+
+        double len = Math.sqrt(lenSq);
+        dx /= len;
+        dz /= len;
+
+        LivingEntity owner = this.mercenary.getOwner();
+        double maxOwnerDist = Math.min(this.mercenary.getRank().getMaxChaseFromAnchor() * 1.25, 16.0);
+        double maxOwnerDistSqr = maxOwnerDist * maxOwnerDist;
+
+        double dist = 10.0;
+        double[] angles = new double[]{0.0, 0.5235987755982988, -0.5235987755982988, 1.0471975511965976, -1.0471975511965976, 1.5707963267948966, -1.5707963267948966};
+
+        for (double angle : angles) {
+            double cos = Math.cos(angle);
+            double sin = Math.sin(angle);
+            double rdx = dx * cos - dz * sin;
+            double rdz = dx * sin + dz * cos;
+
+            double x = ax + rdx * dist;
+            double z = az + rdz * dist;
+            double y = anchor.getY();
+
+            if (owner != null) {
+                double odx = x - owner.getX();
+                double odz = z - owner.getZ();
+                double oLenSq = odx * odx + odz * odz;
+                if (oLenSq > maxOwnerDistSqr && oLenSq > 1.0E-4) {
+                    double oLen = Math.sqrt(oLenSq);
+                    odx /= oLen;
+                    odz /= oLen;
+                    x = owner.getX() + odx * maxOwnerDist;
+                    z = owner.getZ() + odz * maxOwnerDist;
+                }
+            }
+
+            double currentDistSq = threat.distanceToSqr(this.mercenary);
+            double candidateDistSq = threat.distanceToSqr(x, y, z);
+            if (candidateDistSq <= currentDistSq + 4.0) {
+                continue;
+            }
+
+            BlockPos target = new BlockPos(Mth.floor(x), Mth.floor(y), Mth.floor(z));
+
+            BlockPos ground = target;
+            for (int dy = 3; dy >= -3; dy--) {
+                BlockPos check = target.offset(0, dy, 0);
+                if (this.mercenary.level().getBlockState(check.below()).isSolid()
+                        && !this.mercenary.level().getBlockState(check).isSolid()) {
+                    ground = check;
+                    break;
+                }
+            }
+
+            if (this.mercenary.getNavigation().moveTo(
+                    ground.getX() + 0.5, ground.getY(), ground.getZ() + 0.5, this.speedModifier)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
