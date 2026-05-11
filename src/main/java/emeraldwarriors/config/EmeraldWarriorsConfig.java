@@ -5,7 +5,7 @@ import java.util.List;
 
 public final class EmeraldWarriorsConfig {
 
-    public int configVersion = 5;
+    public int configVersion = 6;
 
     public Toggles toggles = new Toggles();
     public Camp camp = new Camp();
@@ -37,9 +37,9 @@ public final class EmeraldWarriorsConfig {
 
         public int checkIntervalTicks = 12000;
         public float spawnChancePerCheck = 0.50F;
-        public int maxNearbyMercs = 3;
+        public int maxNearbyMercs = 4;
 
-        public float thirdMercSpawnChanceMultiplier = 0.35F;
+        public float thirdMercSpawnChanceMultiplier = 0.45F;
 
         public boolean requireActivePlayer = true;
         public int activePlayerWindowTicks = 12000;

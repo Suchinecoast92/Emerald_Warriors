@@ -33,6 +33,9 @@ public class EmeraldHurtByTargetGoal extends TargetGoal {
         }
 
         int hurtTimestamp = this.mercenary.getLastHurtByMobTimestamp();
+        if (hurtTimestamp <= this.mercenary.getSelfLastHurtByMobTimestampBaseline()) {
+            return false;
+        }
         if (hurtTimestamp == this.timestamp) {
             return false;
         }

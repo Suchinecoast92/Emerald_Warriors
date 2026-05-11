@@ -48,6 +48,9 @@ public class OwnerHurtTargetGoal extends TargetGoal {
         }
 
         int hurtTimestamp = owner.getLastHurtMobTimestamp();
+        if (hurtTimestamp <= this.mercenary.getOwnerLastHurtMobTimestampBaseline()) {
+            return false;
+        }
         if (hurtTimestamp == this.timestamp) {
             return false;
         }

@@ -48,6 +48,9 @@ public class EmeraldProtectOwnerGoal extends TargetGoal {
         }
 
         int hurtTimestamp = owner.getLastHurtByMobTimestamp();
+        if (hurtTimestamp <= this.mercenary.getOwnerLastHurtByMobTimestampBaseline()) {
+            return false;
+        }
         if (hurtTimestamp == this.timestamp) {
             return false;
         }

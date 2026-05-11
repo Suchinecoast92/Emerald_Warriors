@@ -169,6 +169,11 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     private net.minecraft.world.phys.Vec3 lastOwnerKnownPos;
 
+    private int ownerLastHurtByMobTimestampBaseline;
+    private int ownerLastHurtMobTimestampBaseline;
+
+    private int selfLastHurtByMobTimestampBaseline;
+
     private UUID bannedOwnerUuid;
     private int bannedUntilDay;
 
@@ -496,6 +501,14 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         }
         // Refresh proactive target goal based on new order (server-side only)
         if (!this.level().isClientSide()) {
+            this.getNavigation().stop();
+            this.setTarget(null);
+            this.setAggressive(false);
+            if (this.isUsingItem()) {
+                this.stopUsingItem();
+            }
+            this.updateOwnerCombatBaselines();
+            this.selfLastHurtByMobTimestampBaseline = this.getLastHurtByMobTimestamp();
             this.refreshTargetGoalsByOrder();
         }
     }
@@ -1393,10 +1406,35 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         return this.ownerUuid != null ? this.level().getPlayerByUUID(this.ownerUuid) : null;
     }
 
+    public int getOwnerLastHurtByMobTimestampBaseline() {
+        return this.ownerLastHurtByMobTimestampBaseline;
+    }
+
+    public int getOwnerLastHurtMobTimestampBaseline() {
+        return this.ownerLastHurtMobTimestampBaseline;
+    }
+
+    public int getSelfLastHurtByMobTimestampBaseline() {
+        return this.selfLastHurtByMobTimestampBaseline;
+    }
+
+    private void updateOwnerCombatBaselines() {
+        LivingEntity owner = this.getOwner();
+        if (owner == null) {
+            this.ownerLastHurtByMobTimestampBaseline = 0;
+            this.ownerLastHurtMobTimestampBaseline = 0;
+            return;
+        }
+        this.ownerLastHurtByMobTimestampBaseline = owner.getLastHurtByMobTimestamp();
+        this.ownerLastHurtMobTimestampBaseline = owner.getLastHurtMobTimestamp();
+    }
+
     public void setOwner(Player player) {
         this.ownerUuid = player.getUUID();
         this.ownerName = player.getGameProfile().name();
         this.lastOwnerKnownPos = player.position();
+
+        this.updateOwnerCombatBaselines();
 
         this.wildVillagerDefenseOffenderUuid = null;
         this.wildVillagerDefenseStrikes = 0;
@@ -2663,6 +2701,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
                 if (owner != null) {
                     this.lastOwnerKnownPos = owner.position();
+                    if (owner.tickCount < this.ownerLastHurtByMobTimestampBaseline
+                            || owner.tickCount < this.ownerLastHurtMobTimestampBaseline) {
+                        this.updateOwnerCombatBaselines();
+                    }
                 }
 
                 // Check if owner is in a different dimension (dimensional follow)
@@ -3565,10 +3607,14 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         }
 
         if (action == PendingContractAction.START_CONTRACT && pendingOwner != null && pendingDays > 0) {
-            this.ownerUuid = pendingOwner;
             Player p = sl.getPlayerByUUID(pendingOwner);
             if (p != null) {
-                this.ownerName = p.getGameProfile().name();
+                this.setOwner(p);
+            } else {
+                this.ownerUuid = pendingOwner;
+                this.ownerName = null;
+                this.lastOwnerKnownPos = this.position();
+                this.updateOwnerCombatBaselines();
             }
             if (usedBundle && usedBundlePayer != null) {
                 this.currentContractBundlePayerUuid = usedBundlePayer;

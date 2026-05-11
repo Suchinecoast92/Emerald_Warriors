@@ -85,6 +85,18 @@ public final class ModConfig {
             config.configVersion = 5;
         }
 
+        if (config.configVersion < 6) {
+            if (config.villageSpawn != null) {
+                if (config.villageSpawn.maxNearbyMercs == 3) {
+                    config.villageSpawn.maxNearbyMercs = 4;
+                }
+                if (config.villageSpawn.thirdMercSpawnChanceMultiplier == 0.35F) {
+                    config.villageSpawn.thirdMercSpawnChanceMultiplier = 0.45F;
+                }
+            }
+            config.configVersion = 6;
+        }
+
         save(path, config);
     }
 
