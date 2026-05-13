@@ -55,12 +55,13 @@ public class EmeraldMeleeAttackGoal extends Goal {
             return false;
         }
 
-        if (this.mob.isNeutralOrder()) {
+        if (this.mob.isNeutralOrder() && !this.mob.isInDisciplineAggro()) {
             LivingEntity lastHurtBy = this.mob.getLastHurtByMob();
-            if (lastHurtBy == null || lastHurtBy != target) {
-                return false;
-            }
-            if (this.mob.tickCount - this.mob.getLastHurtByMobTimestamp() > 100) {
+            boolean validNeutralTarget = (lastHurtBy != null
+                    && lastHurtBy == target
+                    && this.mob.tickCount - this.mob.getLastHurtByMobTimestamp() <= 200)
+                    || this.mob.isBrotherhoodAssistTarget(target);
+            if (!validNeutralTarget) {
                 return false;
             }
         }
@@ -81,12 +82,13 @@ public class EmeraldMeleeAttackGoal extends Goal {
             return false;
         }
 
-        if (this.mob.isNeutralOrder()) {
+        if (this.mob.isNeutralOrder() && !this.mob.isInDisciplineAggro()) {
             LivingEntity lastHurtBy = this.mob.getLastHurtByMob();
-            if (lastHurtBy == null || lastHurtBy != target) {
-                return false;
-            }
-            if (this.mob.tickCount - this.mob.getLastHurtByMobTimestamp() > 100) {
+            boolean validNeutralTarget = (lastHurtBy != null
+                    && lastHurtBy == target
+                    && this.mob.tickCount - this.mob.getLastHurtByMobTimestamp() <= 200)
+                    || this.mob.isBrotherhoodAssistTarget(target);
+            if (!validNeutralTarget) {
                 return false;
             }
         }
@@ -103,6 +105,9 @@ public class EmeraldMeleeAttackGoal extends Goal {
     }
 
     private boolean isTooFarFromAnchor() {
+        if (this.mob.isInDisciplineAggro()) {
+            return false;
+        }
         int maxChase = this.mob.getRank().getMaxChaseFromAnchor();
         // Triple chase distance during active raids
         double raidMultiplier = this.mob.isRaidActive() ? 3.0 : 1.0;
@@ -125,7 +130,7 @@ public class EmeraldMeleeAttackGoal extends Goal {
                 }
                 return false;
             }
-            case PATROL -> {
+            case PATROL, NEUTRAL -> {
                 BlockPos center = this.mob.getPatrolCenter();
                 if (center != null) {
                     double dist = this.mob.distanceToSqr(center.getX() + 0.5, center.getY(), center.getZ() + 0.5);
@@ -241,7 +246,7 @@ public class EmeraldMeleeAttackGoal extends Goal {
 
     private boolean isWithinAttackRange(LivingEntity target, double attackReachSqr) {
         double dy = Math.abs(target.getY() - this.mob.getY());
-        if (dy > 1.5D) {
+        if (dy > 2.0D) {
             return false;
         }
         return this.horizontalDistanceSqr(target) <= attackReachSqr + 0.25D;
@@ -329,10 +334,11 @@ public class EmeraldMeleeAttackGoal extends Goal {
         // pueda golpear desde algo más lejos sin tener que pegarse a su hitbox.
         // Esto mantiene la física de knockback 100 % vanilla (LivingEntity.knockback),
         // cambiando solo la distancia a la que se coloca.
+        double reach = base;
         if (target instanceof Creeper) {
-            return base * 4.0D; // ~doble alcance lineal (sqrt(4) = 2)
+            reach = base * 4.0D; // ~doble alcance lineal (sqrt(4) = 2)
         }
 
-        return base;
+        return Math.max(reach, 5.5225D);
     }
 }

@@ -50,6 +50,7 @@ public class EmeraldHurtByTargetGoal extends TargetGoal {
     @Override
     public void start() {
         this.mob.setTarget(this.attacker);
+        this.mercenary.alertBrotherhood(this.attacker);
         super.start();
     }
 }

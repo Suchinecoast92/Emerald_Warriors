@@ -43,12 +43,13 @@ public class EmeraldBowAttackGoal extends Goal {
             return false;
         }
 
-        if (this.mob.isNeutralOrder()) {
+        if (this.mob.isNeutralOrder() && !this.mob.isInDisciplineAggro()) {
             LivingEntity lastHurtBy = this.mob.getLastHurtByMob();
-            if (lastHurtBy == null || lastHurtBy != target) {
-                return false;
-            }
-            if (this.mob.tickCount - this.mob.getLastHurtByMobTimestamp() > 100) {
+            boolean validNeutralTarget = (lastHurtBy != null
+                    && lastHurtBy == target
+                    && this.mob.tickCount - this.mob.getLastHurtByMobTimestamp() <= 200)
+                    || this.mob.isBrotherhoodAssistTarget(target);
+            if (!validNeutralTarget) {
                 return false;
             }
         }
@@ -62,12 +63,13 @@ public class EmeraldBowAttackGoal extends Goal {
             return false;
         }
 
-        if (this.mob.isNeutralOrder()) {
+        if (this.mob.isNeutralOrder() && !this.mob.isInDisciplineAggro()) {
             LivingEntity lastHurtBy = this.mob.getLastHurtByMob();
-            if (lastHurtBy == null || lastHurtBy != target) {
-                return false;
-            }
-            if (this.mob.tickCount - this.mob.getLastHurtByMobTimestamp() > 100) {
+            boolean validNeutralTarget = (lastHurtBy != null
+                    && lastHurtBy == target
+                    && this.mob.tickCount - this.mob.getLastHurtByMobTimestamp() <= 200)
+                    || this.mob.isBrotherhoodAssistTarget(target);
+            if (!validNeutralTarget) {
                 return false;
             }
         }
@@ -313,6 +315,9 @@ public class EmeraldBowAttackGoal extends Goal {
     }
 
     private boolean isTooFarFromAnchor() {
+        if (this.mob.isInDisciplineAggro()) {
+            return false;
+        }
         int maxChase = this.mob.getRank().getMaxChaseFromAnchor();
         double raidMultiplier = this.mob.isRaidActive() ? 3.0 : 1.0;
         LivingEntity target = this.mob.getTarget();
@@ -330,7 +335,7 @@ public class EmeraldBowAttackGoal extends Goal {
                 }
                 return false;
             }
-            case PATROL -> {
+            case PATROL, NEUTRAL -> {
                 BlockPos center = this.mob.getPatrolCenter();
                 if (center != null) {
                     double dist = this.mob.distanceToSqr(center.getX() + 0.5, center.getY(), center.getZ() + 0.5);

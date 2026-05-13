@@ -101,6 +101,8 @@ import net.minecraft.world.entity.projectile.arrow.AbstractArrow;
 import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.entity.projectile.ProjectileUtil;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttackMob, CrossbowAttackMob {
@@ -184,6 +186,16 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private int disciplineAllowOwnerDamageTicks;
     private boolean ownerDisciplineCounterWithWeapon;
 
+    private UUID disciplineExOwnerUuid;
+    private int disciplineExOwnerAggroTicks;
+    private int disciplineExOwnerRetreatTicks;
+    private boolean disciplineExOwnerKilledDuringAggro;
+
+    private long lastBrotherhoodAlertGameTime;
+    private UUID brotherhoodAssistTargetUuid;
+    private int brotherhoodAssistLockTicks;
+    private int wildRegenTicks;
+
     private UUID wildVillagerDefenseOffenderUuid;
     private int wildVillagerDefenseStrikes;
     private long wildVillagerDefenseWindowEndGameTime;
@@ -221,6 +233,18 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     
     // Pauses EmeraldFollowOwnerGoal when owner is offline or too far (FOLLOW order only)
     private boolean systemForcedNone = false;
+
+    private static final class ContractPricePenaltyEntry {
+        private int penaltyPerDay;
+        private int lastDay;
+
+        private ContractPricePenaltyEntry(int penaltyPerDay, int lastDay) {
+            this.penaltyPerDay = penaltyPerDay;
+            this.lastDay = lastDay;
+        }
+    }
+
+    private final Map<UUID, ContractPricePenaltyEntry> contractPricePenaltyByPlayer = new HashMap<>();
 
     public boolean isSystemForcedNone() {
         return this.systemForcedNone;
@@ -507,6 +531,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             if (this.isUsingItem()) {
                 this.stopUsingItem();
             }
+            this.brotherhoodAssistTargetUuid = null;
+            this.brotherhoodAssistLockTicks = 0;
             this.updateOwnerCombatBaselines();
             this.selfLastHurtByMobTimestampBaseline = this.getLastHurtByMobTimestamp();
             this.refreshTargetGoalsByOrder();
@@ -541,6 +567,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         // No neutral order exists in the 3-order system. All orders allow defensive combat.
         // Proactive vs defensive is controlled by refreshTargetGoalsByOrder() (NearestAttackableTargetGoal)
         return this.getCurrentOrder() == MercenaryOrder.NEUTRAL;
+    }
+
+    public boolean isInDisciplineAggro() {
+        return this.disciplineExOwnerAggroTicks > 0 && this.disciplineExOwnerUuid != null;
     }
 
     public boolean isOutOfCombatForHeal() {
@@ -880,6 +910,27 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             output.putInt("ContractDaysPerPurchase", this.contractDaysPerPurchase);
         }
 
+        if (!this.contractPricePenaltyByPlayer.isEmpty()) {
+            int i = 0;
+            for (var e : this.contractPricePenaltyByPlayer.entrySet()) {
+                if (i >= 16) {
+                    break;
+                }
+                UUID id = e.getKey();
+                ContractPricePenaltyEntry entry = e.getValue();
+                if (id == null || entry == null || entry.penaltyPerDay <= 0) {
+                    continue;
+                }
+                output.putString("ContractPenaltyUuid" + i, id.toString());
+                output.putInt("ContractPenaltyPerDay" + i, entry.penaltyPerDay);
+                output.putInt("ContractPenaltyDay" + i, entry.lastDay);
+                i++;
+            }
+            if (i > 0) {
+                output.putInt("ContractPenaltyCount", i);
+            }
+        }
+
         if (this.bannedOwnerUuid != null && this.bannedUntilDay > 0) {
             output.putString("BannedOwner", this.bannedOwnerUuid.toString());
             output.putInt("BannedUntilDay", this.bannedUntilDay);
@@ -982,6 +1033,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.contractExpirePending = false;
 
         this.ownerName = null;
+        this.contractPricePenaltyByPlayer.clear();
         input.getString("Owner").ifPresent(value -> {
             try {
                 this.ownerUuid = UUID.fromString(value);
@@ -1035,63 +1087,34 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.contractEmeraldsPerService = input.getIntOr("ContractRate", this.contractEmeraldsPerService);
         this.contractDaysPerPurchase = input.getIntOr("ContractDaysPerPurchase", this.contractDaysPerPurchase);
 
+        int penaltyCount = input.getIntOr("ContractPenaltyCount", 0);
+        if (penaltyCount > 0) {
+            int cap = Math.min(16, penaltyCount);
+            for (int i = 0; i < cap; i++) {
+                Optional<String> idOpt = input.getString("ContractPenaltyUuid" + i);
+                if (idOpt.isEmpty()) {
+                    continue;
+                }
+                UUID id;
+                try {
+                    id = UUID.fromString(idOpt.get());
+                } catch (IllegalArgumentException ignored) {
+                    continue;
+                }
+                int perDay = input.getIntOr("ContractPenaltyPerDay" + i, 0);
+                int day = input.getIntOr("ContractPenaltyDay" + i, 0);
+                if (perDay <= 0) {
+                    continue;
+                }
+                this.contractPricePenaltyByPlayer.put(id, new ContractPricePenaltyEntry(perDay, day));
+            }
+        }
+
         this.getContractDaysPerPurchase();
         this.getContractEmeraldsPerService();
 
         this.experience = input.getIntOr("MercenaryXp", this.experience);
         this.maxExperience = input.getIntOr("MercenaryMaxXp", this.maxExperience);
-
-        if (this.ownerUuid == null) {
-            this.contractTicksRemaining = 0;
-            this.contractRenewWarned = false;
-            this.ownerName = null;
-        }
-
-        this.contractAdmireTicks = input.getIntOr("ContractAdmireTicks", this.contractAdmireTicks);
-        input.getString("ContractAdmirePlayer").ifPresent(value -> {
-            try {
-                this.contractAdmirePlayerUuid = UUID.fromString(value);
-            } catch (IllegalArgumentException ignored) {
-                this.contractAdmirePlayerUuid = null;
-            }
-        });
-        input.getString("PendingContractAction").ifPresent(value -> {
-            try {
-                this.pendingContractAction = PendingContractAction.valueOf(value);
-            } catch (IllegalArgumentException ignored) {
-                this.pendingContractAction = PendingContractAction.NONE;
-            }
-        });
-        input.getString("PendingContractOwner").ifPresent(value -> {
-            try {
-                this.pendingContractOwnerAfterAdmire = UUID.fromString(value);
-            } catch (IllegalArgumentException ignored) {
-                this.pendingContractOwnerAfterAdmire = null;
-            }
-        });
-        this.pendingContractDaysAfterAdmire = input.getIntOr("PendingContractDays", this.pendingContractDaysAfterAdmire);
-        this.pendingRenewDaysAfterAdmire = input.getIntOr("PendingRenewDays", this.pendingRenewDaysAfterAdmire);
-        var savedMainOpt = input.read("ContractAdmireSavedMainHand", ItemStack.CODEC);
-        if (savedMainOpt.isPresent()) {
-            this.contractAdmireSavedMainHand = savedMainOpt.get();
-        }
-
-        this.pendingContractUsedBundle = input.getIntOr("PendingContractUsedBundle", 0) != 0;
-        input.getString("PendingContractBundlePayer").ifPresent(value -> {
-            try {
-                this.pendingContractBundlePayerUuid = UUID.fromString(value);
-            } catch (IllegalArgumentException ignored) {
-                this.pendingContractBundlePayerUuid = null;
-            }
-        });
-        this.pendingContractBundleChangeEmeralds = input.getIntOr("PendingContractBundleChange", this.pendingContractBundleChangeEmeralds);
-
-        if (this.pendingContractAction != PendingContractAction.NONE && this.contractAdmireTicks <= 0) {
-            this.contractAdmireTicks = 1;
-        }
-
-        // Forzar pickup después de cargar NBT (Mob.readAdditionalSaveData lo sobreescribe a false por defecto)
-        this.setCanPickUpLoot(true);
 
         // Orden
         input.getString("MercenaryOrder").ifPresent(value -> {
@@ -1240,6 +1263,109 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         }
 
         return this.contractDaysPerPurchase;
+    }
+
+    private int getContractPenaltyCapPerDay() {
+        int days = this.getContractDaysPerPurchase();
+        if (days <= 0) {
+            days = 1;
+        }
+        int baseRate = this.getContractEmeraldsPerService();
+        int basePerDay = Math.max(1, baseRate / days);
+        return Math.max(2, Math.min(6, basePerDay + 2));
+    }
+
+    private int getContractPricePenaltyPerDayFor(Player player) {
+        if (player == null) {
+            return 0;
+        }
+        ContractPricePenaltyEntry entry = this.contractPricePenaltyByPlayer.get(player.getUUID());
+        if (entry == null) {
+            return 0;
+        }
+        int currentDay = (int) (this.level().getDayTime() / (long) TICKS_PER_DAY);
+        if (currentDay > entry.lastDay) {
+            int passed = currentDay - entry.lastDay;
+            entry.penaltyPerDay = Math.max(0, entry.penaltyPerDay - passed);
+            entry.lastDay = currentDay;
+            if (entry.penaltyPerDay <= 0) {
+                this.contractPricePenaltyByPlayer.remove(player.getUUID());
+                return 0;
+            }
+        }
+        return entry.penaltyPerDay;
+    }
+
+    private void addContractPricePenalty(Player player, int penaltyPerDay) {
+        if (player == null || penaltyPerDay <= 0) {
+            return;
+        }
+        if (this.level().isClientSide()) {
+            return;
+        }
+        if (this.ownerUuid != null) {
+            return;
+        }
+
+        UUID id = player.getUUID();
+        int currentDay = (int) (this.level().getDayTime() / (long) TICKS_PER_DAY);
+        ContractPricePenaltyEntry entry = this.contractPricePenaltyByPlayer.get(id);
+        if (entry == null) {
+            entry = new ContractPricePenaltyEntry(0, currentDay);
+            this.contractPricePenaltyByPlayer.put(id, entry);
+        }
+        if (currentDay > entry.lastDay) {
+            int passed = currentDay - entry.lastDay;
+            entry.penaltyPerDay = Math.max(0, entry.penaltyPerDay - passed);
+            entry.lastDay = currentDay;
+        }
+
+        int cap = this.getContractPenaltyCapPerDay();
+        entry.penaltyPerDay = Math.min(cap, entry.penaltyPerDay + penaltyPerDay);
+        entry.lastDay = currentDay;
+        if (entry.penaltyPerDay <= 0) {
+            this.contractPricePenaltyByPlayer.remove(id);
+            return;
+        }
+
+        if (this.contractPricePenaltyByPlayer.size() > 16) {
+            UUID oldest = null;
+            int bestDay = Integer.MAX_VALUE;
+            for (var e : this.contractPricePenaltyByPlayer.entrySet()) {
+                if (e.getKey().equals(id)) {
+                    continue;
+                }
+                int day = e.getValue().lastDay;
+                if (day < bestDay) {
+                    bestDay = day;
+                    oldest = e.getKey();
+                }
+            }
+            if (oldest != null) {
+                this.contractPricePenaltyByPlayer.remove(oldest);
+            }
+        }
+    }
+
+    private int getContractEmeraldsPerServiceFor(Player player) {
+        int baseRate = this.getContractEmeraldsPerService();
+        if (this.ownerUuid != null) {
+            return baseRate;
+        }
+
+        int days = this.getContractDaysPerPurchase();
+        if (days <= 0) {
+            days = 1;
+        }
+
+        int penalty = this.getContractPricePenaltyPerDayFor(player);
+        if (penalty <= 0) {
+            return baseRate;
+        }
+
+        int basePerDay = Math.max(1, baseRate / days);
+        int perDay = Math.max(1, basePerDay + penalty);
+        return Math.max(1, perDay * days);
     }
 
     private String randomProposal() {
@@ -1418,6 +1544,112 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         return this.selfLastHurtByMobTimestampBaseline;
     }
 
+    public void alertBrotherhood(LivingEntity attacker) {
+        if (!(this.level() instanceof ServerLevel)) {
+            return;
+        }
+        UUID ownerId = this.ownerUuid;
+        if (ownerId == null) {
+            return;
+        }
+        if (attacker == null || !attacker.isAlive()) {
+            return;
+        }
+        if (attacker instanceof Player p && (p.isSpectator() || p.isCreative())) {
+            return;
+        }
+        if (attacker.getUUID().equals(ownerId)) {
+            return;
+        }
+        if (attacker instanceof EmeraldMercenaryEntity other) {
+            UUID otherOwner = other.getOwnerUuid();
+            if (otherOwner != null && otherOwner.equals(ownerId)) {
+                return;
+            }
+        }
+
+        long now = this.level().getGameTime();
+        if (now - this.lastBrotherhoodAlertGameTime < 20L) {
+            return;
+        }
+        this.lastBrotherhoodAlertGameTime = now;
+
+        AABB search = this.getBoundingBox().inflate(32.0D);
+        for (EmeraldMercenaryEntity ally : this.level().getEntitiesOfClass(
+                EmeraldMercenaryEntity.class,
+                search,
+                e -> e != this && ownerId.equals(e.getOwnerUuid())
+        )) {
+            if (!ally.isAlive()) {
+                continue;
+            }
+            double radius = ally.getBrotherhoodAlertRadiusForOrder(ally.getCurrentOrder());
+            if (ally.distanceToSqr(this) > radius * radius) {
+                continue;
+            }
+            if (ally.isContractAdmiring()) {
+                continue;
+            }
+            if (ally.disciplineExOwnerAggroTicks > 0 || ally.disciplineExOwnerRetreatTicks > 0) {
+                continue;
+            }
+            ally.startBrotherhoodAssist(attacker);
+        }
+    }
+
+    private double getBrotherhoodAlertRadiusForOrder(MercenaryOrder order) {
+        if (order == MercenaryOrder.PATROL) {
+            return 32.0D;
+        }
+        if (order == MercenaryOrder.NEUTRAL) {
+            return 24.0D;
+        }
+        return 16.0D;
+    }
+
+    private int getBrotherhoodAssistLockTicksForOrder(MercenaryOrder order) {
+        return order == MercenaryOrder.PATROL ? 240 : 200;
+    }
+
+    public boolean isBrotherhoodAssistTarget(LivingEntity target) {
+        if (target == null) {
+            return false;
+        }
+        return this.brotherhoodAssistLockTicks > 0
+                && this.brotherhoodAssistTargetUuid != null
+                && this.brotherhoodAssistTargetUuid.equals(target.getUUID());
+    }
+
+    private void startBrotherhoodAssist(LivingEntity attacker) {
+        MercenaryOrder order = this.getCurrentOrder();
+        if (order == MercenaryOrder.GUARD || order == MercenaryOrder.PATROL || order == MercenaryOrder.NEUTRAL) {
+            this.brotherhoodAssistTargetUuid = attacker.getUUID();
+            this.brotherhoodAssistLockTicks = Math.max(this.brotherhoodAssistLockTicks, this.getBrotherhoodAssistLockTicksForOrder(order));
+        }
+        this.setTargetFromBrotherhood(attacker);
+    }
+
+    private void setTargetFromBrotherhood(LivingEntity attacker) {
+        if (attacker == null || !attacker.isAlive()) {
+            return;
+        }
+        if (attacker instanceof AbstractVillager || attacker instanceof IronGolem) {
+            return;
+        }
+        if (attacker instanceof Player p && this.ownerUuid != null && this.ownerUuid.equals(p.getUUID())) {
+            return;
+        }
+        if (attacker instanceof EmeraldMercenaryEntity other) {
+            UUID otherOwner = other.getOwnerUuid();
+            if (otherOwner != null && otherOwner.equals(this.ownerUuid)) {
+                return;
+            }
+        }
+
+        this.setTarget(attacker);
+        this.setAggressive(true);
+    }
+
     private void updateOwnerCombatBaselines() {
         LivingEntity owner = this.getOwner();
         if (owner == null) {
@@ -1523,9 +1755,15 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                 this.getX(), this.getY() + 1.0, this.getZ(), 8, 0.4, 0.5, 0.4, 0.0);
 
         if (this.wildVillagerDefenseStrikes == 1) {
-            this.wildVillagerDefenseLookTicks = 10 + this.random.nextInt(11);
-            this.wildVillagerDefenseSlapCountdown = 40;
             this.wildVillagerDefenseAggroTicks = Math.max(this.wildVillagerDefenseAggroTicks, 200);
+            if (this.distanceToSqr(offender) <= 4.0D && this.hasLineOfSight(offender)) {
+                this.wildVillagerDefenseLookTicks = 0;
+                this.wildVillagerDefenseSlapCountdown = 0;
+                this.performWildVillagerDefenseSlap();
+            } else {
+                this.wildVillagerDefenseLookTicks = 10 + this.random.nextInt(11);
+                this.wildVillagerDefenseSlapCountdown = 40;
+            }
         } else if (this.wildVillagerDefenseStrikes == 2) {
             int lookTicks = 20 + this.random.nextInt(11);
             int slapTicks = 60 + this.random.nextInt(21);
@@ -1654,6 +1892,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             return;
         }
 
+        UUID exOwner = owner.getUUID();
+        this.lastOwnerKnownPos = owner.position();
+
         this.bannedOwnerUuid = owner.getUUID();
         int currentDay = (int) (this.level().getDayTime() / (long) TICKS_PER_DAY);
         int banDays = banDaysByRank(this.getRank());
@@ -1696,54 +1937,13 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
         this.refreshCombatRoleAndGoals();
 
-        this.retreatFromExOwner(owner);
-    }
-
-    private void retreatFromExOwner(Player owner) {
-        this.lastOwnerKnownPos = owner.position();
-
-        double dx = this.getX() - owner.getX();
-        double dz = this.getZ() - owner.getZ();
-        double len = Math.sqrt(dx * dx + dz * dz);
-        if (len < 0.001D) {
-            dx = (this.random.nextDouble() - 0.5D);
-            dz = (this.random.nextDouble() - 0.5D);
-            len = Math.sqrt(dx * dx + dz * dz);
-        }
-        dx /= len;
-        dz /= len;
-
-        double[] dists = new double[] { 32.0D, 44.0D, 56.0D, 72.0D };
-        for (double dist : dists) {
-            for (int attempts = 0; attempts < 16; attempts++) {
-                double tx = this.getX() + dx * dist + (this.random.nextDouble() - 0.5D) * 16.0D;
-                double tz = this.getZ() + dz * dist + (this.random.nextDouble() - 0.5D) * 16.0D;
-                BlockPos target = new BlockPos((int) Math.floor(tx), (int) Math.floor(this.getY()), (int) Math.floor(tz));
-
-                BlockPos ground = target;
-                for (int dy = 8; dy >= -12; dy--) {
-                    BlockPos check = target.offset(0, dy, 0);
-                    if (this.level().getBlockState(check.below()).isSolid()
-                            && !this.level().getBlockState(check).isSolid()) {
-                        ground = check;
-                        break;
-                    }
-                }
-
-                if (this.getNavigation().moveTo(ground.getX() + 0.5, ground.getY(), ground.getZ() + 0.5, 1.25D)) {
-                    if (this.getCurrentOrder() == MercenaryOrder.NEUTRAL) {
-                        this.patrolCenter = ground;
-                    }
-                    return;
-                }
-            }
-        }
-
-        double tx = this.getX() + dx * 32.0D;
-        double tz = this.getZ() + dz * 32.0D;
-        this.getNavigation().moveTo(tx, this.getY(), tz, 1.25D);
-        if (this.getCurrentOrder() == MercenaryOrder.NEUTRAL) {
-            this.patrolCenter = new BlockPos((int) Math.floor(tx), (int) Math.floor(this.getY()), (int) Math.floor(tz));
+        this.disciplineExOwnerUuid = exOwner;
+        this.disciplineExOwnerAggroTicks = 1200;
+        this.disciplineExOwnerRetreatTicks = 0;
+        if (owner.isAlive()) {
+            this.setTarget(owner);
+            this.setAggressive(true);
+            this.getNavigation().moveTo(owner, 1.2D);
         }
     }
 
@@ -1998,6 +2198,27 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         }
         
         super.actuallyHurt(level, source, amount);
+
+        if (amount > 0.0F) {
+            net.minecraft.world.entity.Entity src = source.getEntity();
+            LivingEntity attacker = (src instanceof LivingEntity living) ? living : null;
+            if (attacker == null) {
+                net.minecraft.world.entity.Entity direct = source.getDirectEntity();
+                if (direct instanceof LivingEntity living) {
+                    attacker = living;
+                }
+            }
+            if (attacker != null) {
+                this.alertBrotherhood(attacker);
+            }
+        }
+
+        if (amount > 0.0F && this.ownerUuid == null) {
+            var attacker = source.getEntity();
+            if (attacker instanceof Player p && !p.isSpectator() && !p.isCreative()) {
+                this.addContractPricePenalty(p, 1);
+            }
+        }
     }
 
     public void addContractDays(int days) {
@@ -2037,6 +2258,15 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                 return;
             }
 
+            if (target instanceof Player p
+                    && this.disciplineExOwnerUuid != null
+                    && this.disciplineExOwnerUuid.equals(p.getUUID())
+                    && (this.disciplineExOwnerAggroTicks <= 0 || this.disciplineExOwnerKilledDuringAggro)) {
+                // Never target the ex-owner after aggro phase ends OR if killed during aggro
+                // This prevents re-targeting after respawn
+                return;
+            }
+
             // Friendly fire prevention: never target another mercenary owned by the same player
             if (target instanceof EmeraldMercenaryEntity otherMerc) {
                 UUID otherOwner = otherMerc.getOwnerUuid();
@@ -2056,6 +2286,13 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                     && (this.tickCount - this.getLastHurtByMobTimestamp() < 100);
             if (recentAttacker) {
                 super.setTarget(target);
+                return;
+            }
+
+            if ((order == MercenaryOrder.GUARD || order == MercenaryOrder.PATROL)
+                    && this.brotherhoodAssistLockTicks > 0
+                    && this.brotherhoodAssistTargetUuid != null
+                    && !this.brotherhoodAssistTargetUuid.equals(target.getUUID())) {
                 return;
             }
             
@@ -2555,6 +2792,71 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                 this.disciplineAllowOwnerDamageTicks--;
             }
 
+            if (this.disciplineExOwnerAggroTicks > 0 && this.disciplineExOwnerUuid != null) {
+                Player exOwner = this.level().getPlayerByUUID(this.disciplineExOwnerUuid);
+                if (exOwner != null && exOwner.isAlive()) {
+                    this.lastOwnerKnownPos = exOwner.position();
+                    LivingEntity t = this.getTarget();
+                    if (t == null || !t.isAlive() || t != exOwner) {
+                        this.setTarget(exOwner);
+                    }
+                    this.setAggressive(true);
+                    if (this.distanceToSqr(exOwner) > 4.0D) {
+                        this.getNavigation().moveTo(exOwner, 1.2D);
+                    }
+                } else {
+                    // Ex-owner died or is not in this world - end aggro immediately
+                    this.disciplineExOwnerAggroTicks = 0;
+                    this.disciplineExOwnerKilledDuringAggro = true;
+                    this.disciplineExOwnerRetreatTicks = 200;
+                    this.setTarget(null);
+                    this.setAggressive(false);
+                    this.getNavigation().stop();
+                    if (this.lastOwnerKnownPos != null) {
+                        this.retreatFromExOwnerPosition(this.lastOwnerKnownPos);
+                    } else {
+                        this.retreatFromRandomDirection();
+                    }
+                }
+
+                this.disciplineExOwnerAggroTicks--;
+                if (this.disciplineExOwnerAggroTicks <= 0) {
+                    this.disciplineExOwnerAggroTicks = 0;
+                    this.disciplineExOwnerRetreatTicks = 200;
+                    this.setTarget(null);
+                    this.setAggressive(false);
+                    this.getNavigation().stop();
+                    if (this.lastOwnerKnownPos != null) {
+                        this.retreatFromExOwnerPosition(this.lastOwnerKnownPos);
+                    } else {
+                        this.retreatFromRandomDirection();
+                    }
+                }
+            }
+
+            if (this.disciplineExOwnerRetreatTicks > 0 && this.disciplineExOwnerUuid != null) {
+                this.disciplineExOwnerRetreatTicks--;
+                LivingEntity t = this.getTarget();
+                if (t instanceof Player p && p.getUUID().equals(this.disciplineExOwnerUuid)) {
+                    this.setTarget(null);
+                }
+                if (this.disciplineExOwnerRetreatTicks % 40 == 0) {
+                    Player exOwner = this.level().getPlayerByUUID(this.disciplineExOwnerUuid);
+                    if (exOwner != null && exOwner.isAlive()) {
+                        this.lastOwnerKnownPos = exOwner.position();
+                    }
+                    if (this.lastOwnerKnownPos != null) {
+                        this.retreatFromExOwnerPosition(this.lastOwnerKnownPos);
+                    } else {
+                        this.retreatFromRandomDirection();
+                    }
+                }
+                if (this.disciplineExOwnerRetreatTicks <= 0) {
+                    this.disciplineExOwnerRetreatTicks = 0;
+                    this.disciplineExOwnerUuid = null;
+                }
+            }
+
             if (this.ownerDisciplineLookTicks > 0 && this.ownerUuid != null) {
                 this.setTarget(null);
                 this.setAggressive(false);
@@ -2798,6 +3100,45 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             // Track damage timer for all ranks (needed for auto-healing and ANCIENT_GUARD regen)
             this.ticksSinceLastDamage++;
 
+            if (this.brotherhoodAssistLockTicks > 0 && this.brotherhoodAssistTargetUuid != null) {
+                LivingEntity selfAttacker = this.getLastHurtByMob();
+                boolean selfAttackedByDifferentEnemy = selfAttacker != null
+                        && selfAttacker.isAlive()
+                        && (this.tickCount - this.getLastHurtByMobTimestamp() < 60)
+                        && !this.brotherhoodAssistTargetUuid.equals(selfAttacker.getUUID());
+                if (selfAttackedByDifferentEnemy) {
+                    this.brotherhoodAssistLockTicks = 0;
+                    this.brotherhoodAssistTargetUuid = null;
+                } else {
+                    this.brotherhoodAssistLockTicks--;
+                    if (this.brotherhoodAssistLockTicks <= 0) {
+                        this.brotherhoodAssistLockTicks = 0;
+                        this.brotherhoodAssistTargetUuid = null;
+                    } else if (this.level() instanceof ServerLevel sl) {
+                        net.minecraft.world.entity.Entity e = sl.getEntity(this.brotherhoodAssistTargetUuid);
+                        if (e instanceof LivingEntity allyTarget && allyTarget.isAlive()) {
+                            this.setTargetFromBrotherhood(allyTarget);
+                        } else {
+                            this.brotherhoodAssistLockTicks = 0;
+                            this.brotherhoodAssistTargetUuid = null;
+                        }
+                    }
+                }
+            }
+
+            if (this.ownerUuid == null
+                    && this.getRank() != MercenaryRank.ANCIENT_GUARD
+                    && this.isOutOfCombatForHeal()
+                    && this.getHealth() < this.getMaxHealth()) {
+                this.wildRegenTicks++;
+                if (this.wildRegenTicks >= 100) {
+                    this.wildRegenTicks = 0;
+                    this.heal(1.0F);
+                }
+            } else {
+                this.wildRegenTicks = 0;
+            }
+
             if (this.campfireHealCooldown > 0) {
                 this.campfireHealCooldown--;
             }
@@ -2807,7 +3148,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             }
             
             // ANCIENT_GUARD passive regeneration
-            if (this.getRank() == MercenaryRank.ANCIENT_GUARD) {
+            if (this.ownerUuid == null && this.getRank() == MercenaryRank.ANCIENT_GUARD) {
                 if (this.isOutOfCombatForHeal()) {
                     this.regenerationTicks++;
                     if (this.regenerationTicks >= 100) {
@@ -3468,6 +3809,14 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.contractExpireAwayFromPos = null;
     }
 
+    private void retreatFromExOwner(Player owner) {
+        if (owner == null) {
+            return;
+        }
+        this.lastOwnerKnownPos = owner.position();
+        this.retreatFromExOwnerPosition(this.lastOwnerKnownPos);
+    }
+
     private void retreatFromExOwnerPosition(net.minecraft.world.phys.Vec3 awayFrom) {
         double dx = this.getX() - awayFrom.x;
         double dz = this.getZ() - awayFrom.z;
@@ -3874,7 +4223,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             if (this.ownerUuid != null) {
                 boolean canManage = isOwner;
                 if (isSneaking && hand == InteractionHand.MAIN_HAND && canManage && !this.level().isClientSide()) {
-                    int baseRate = this.getContractEmeraldsPerService();
+                    int baseRate = this.getContractEmeraldsPerServiceFor(player);
                     int daysPerPurchase = this.getContractDaysPerPurchase();
                     if (daysPerPurchase <= 0) {
                         daysPerPurchase = 1;
@@ -3962,7 +4311,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                     this.sendContractInfo(player, "Disponible nuevamente en " + remaining + " día" + (remaining == 1 ? "" : "s") + ".");
                     return InteractionResult.CONSUME;
                 }
-                int baseRate = this.getContractEmeraldsPerService();
+                int baseRate = this.getContractEmeraldsPerServiceFor(player);
                 int daysPerPurchase = this.getContractDaysPerPurchase();
                 int rate = this.getDiscountedContractRateFor(player, baseRate, daysPerPurchase);
                 // Caso 1: sin dueño → flujo de dos pasos

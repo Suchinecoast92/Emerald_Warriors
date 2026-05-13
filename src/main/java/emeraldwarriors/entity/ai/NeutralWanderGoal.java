@@ -64,8 +64,11 @@ public class NeutralWanderGoal extends Goal {
             return;
         }
 
-        int radius = this.mercenary.getRank().getPatrolRadius();
+        int baseRadius = this.mercenary.getRank().getPatrolRadius();
         var rng = this.mercenary.getRandom();
+
+        int extra = Math.max(1, (int) Math.ceil(baseRadius * 0.15));
+        int radius = baseRadius + rng.nextInt(extra + 1);
 
         for (int attempts = 0; attempts < 10; attempts++) {
             int dx = rng.nextInt(radius * 2 + 1) - radius;

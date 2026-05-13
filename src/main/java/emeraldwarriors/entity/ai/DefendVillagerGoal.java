@@ -18,6 +18,7 @@ public class DefendVillagerGoal extends TargetGoal {
     private final EmeraldMercenaryEntity mercenary;
     private final double detectionRadius;
     private LivingEntity villagerAttacker;
+    private int scanCooldown;
 
     public DefendVillagerGoal(EmeraldMercenaryEntity mercenary, double detectionRadius) {
         super(mercenary, false);
@@ -28,11 +29,14 @@ public class DefendVillagerGoal extends TargetGoal {
 
     @Override
     public boolean canUse() {
-        if (this.mercenary.isNeutralOrder()) {
+        if (this.scanCooldown > 0) {
+            this.scanCooldown--;
             return false;
         }
-        // Only defend if mercenary has an owner (is contracted)
-        if (this.mercenary.getOwnerUuid() == null) {
+        this.scanCooldown = 20;
+
+        boolean isWild = this.mercenary.getOwnerUuid() == null;
+        if (!isWild && this.mercenary.isNeutralOrder()) {
             return false;
         }
 
@@ -49,8 +53,10 @@ public class DefendVillagerGoal extends TargetGoal {
         for (LivingEntity defendable : nearbyDefendables) {
             LivingEntity attacker = defendable.getLastHurtByMob();
             if (attacker != null && attacker.isAlive() && attacker != this.mercenary) {
-                // Don't target the owner
-                if (this.mercenary.getOwnerUuid().equals(attacker.getUUID())) {
+                if (isWild && attacker instanceof net.minecraft.world.entity.player.Player) {
+                    continue;
+                }
+                if (!isWild && this.mercenary.getOwnerUuid().equals(attacker.getUUID())) {
                     continue;
                 }
                 // Check that the attack was recent (within last 5 seconds = 100 ticks)
