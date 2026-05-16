@@ -187,8 +187,7 @@ public class UseHealingItemGoal extends Goal {
     public static boolean isHealingItem(ItemStack stack) {
         Item item = stack.getItem();
         if (item == Items.GOLDEN_APPLE
-                || item == Items.ENCHANTED_GOLDEN_APPLE
-                || item == Items.GOLDEN_CARROT) {
+                || item == Items.ENCHANTED_GOLDEN_APPLE) {
             return true;
         }
         if (item == Items.POTION) {

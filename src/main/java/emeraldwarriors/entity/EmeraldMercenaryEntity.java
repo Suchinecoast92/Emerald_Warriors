@@ -872,7 +872,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                 .add(Attributes.MAX_HEALTH, 20.0D)  // Base RECRUIT, se ajusta en applyRankAttributes
                 .add(Attributes.ATTACK_DAMAGE, 1.0D)
                 .add(Attributes.ATTACK_SPEED, 4.0D)
+                .add(Attributes.ATTACK_KNOCKBACK, 0.0D)  // Permite knockback vanilla de armas (espadas, hachas, tridentes, lanzas)
                 .add(Attributes.MOVEMENT_SPEED, 0.3D)
+                .add(Attributes.WATER_MOVEMENT_EFFICIENCY, 0.4D)  // Velocidad de nado balanceada
                 .add(Attributes.FOLLOW_RANGE, 32.0D)
                 .add(Attributes.KNOCKBACK_RESISTANCE, 0.0D);  // Base, se ajusta por rango
     }
@@ -2090,23 +2092,35 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     @Override
     public void hurtArmor(DamageSource source, float amount) {
-        if (amount > 0.0F && !this.level().isClientSide()) {
-            // Reset ANCIENT_GUARD regeneration timer when taking damage
-            if (this.getRank() == MercenaryRank.ANCIENT_GUARD) {
-                this.ticksSinceLastDamage = 0;
-                this.regenerationTicks = 0;
-            }
-
-            if (this.ownerUuid == null) {
-                return;
-            }
+        if (amount <= 0.0F) {
+            return;
         }
 
+        if (this.level().isClientSide()) {
+            return;
+        }
+
+        // Reset ANCIENT_GUARD regeneration timer when taking damage
+        if (this.getRank() == MercenaryRank.ANCIENT_GUARD) {
+            this.ticksSinceLastDamage = 0;
+            this.regenerationTicks = 0;
+        }
+
+        // Solo mercenarios contratados desgastan la armadura
         if (this.ownerUuid == null) {
             return;
         }
 
-        super.hurtArmor(source, amount);
+        // LivingEntity.hurtArmor() es un no-op en mobs (solo Player lo implementa).
+        // Replicamos la lógica vanilla del Player: cada 4 HP de daño entrante = 1 punto de durabilidad por pieza.
+        int durabilityDamage = Math.max(1, (int) (amount / 4.0F));
+        for (EquipmentSlot slot : new EquipmentSlot[]{
+                EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET}) {
+            ItemStack armor = this.getItemBySlot(slot);
+            if (!armor.isEmpty() && armor.isDamageableItem()) {
+                armor.hurtAndBreak(durabilityDamage, this, slot);
+            }
+        }
     }
 
     @Override
@@ -2279,8 +2293,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             // FOLLOW: NearestAttackableTargetGoal already disabled via refreshTargetGoalsByOrder().
             // Defensive goals (EmeraldProtectOwnerGoal, OwnerHurtTargetGoal, HurtByTargetGoal)
             // must pass freely so mercenary defends owner and itself.
-            // During raids, triple the effective range for GUARD and PATROL
-            double raidMultiplier = this.isRaidActive() ? 3.0 : 1.0;
+            // During raids, patrolRadius + 12 blocks for PATROL
+            double raidBonus = this.isRaidActive() ? 12.0 : 0.0;
 
             boolean recentAttacker = (target == this.getLastHurtByMob())
                     && (this.tickCount - this.getLastHurtByMobTimestamp() < 100);
@@ -2298,13 +2312,13 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             
             if (order == MercenaryOrder.GUARD && this.guardPos != null) {
                 // GUARD: only accept targets within guardRadius+4 of the guard post
-                double limit = (this.getRank().getGuardRadius() + 4.0) * raidMultiplier;
+                double limit = this.getRank().getGuardRadius() + 4.0;
                 if (target.distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(this.guardPos)) > limit * limit) {
                     return;
                 }
             } else if (order == MercenaryOrder.PATROL && this.patrolCenter != null) {
-                // PATROL: only accept targets within patrolRadius+4 of the patrol center
-                double limit = (this.getRank().getPatrolRadius() + 4.0) * raidMultiplier;
+                // PATROL: only accept targets within patrolRadius+12 during raids
+                double limit = this.getRank().getPatrolRadius() + raidBonus;
                 if (target.distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(this.patrolCenter)) > limit * limit) {
                     return;
                 }
@@ -2786,6 +2800,18 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             if (currentTarget instanceof AbstractVillager || currentTarget instanceof IronGolem) {
                 this.setTarget(null);
                 this.getNavigation().stop();
+            }
+
+            // Lower crossbow when no target or threat
+            if (currentTarget == null || !currentTarget.isAlive()) {
+                ItemStack mainHand = this.getMainHandItem();
+                if (!mainHand.isEmpty() && mainHand.getItem() instanceof CrossbowItem) {
+                    if (this.isChargingCrossbow() || mainHand.has(DataComponents.CHARGED_PROJECTILES)) {
+                        this.setChargingCrossbow(false);
+                        this.stopUsingItem();
+                        mainHand.remove(DataComponents.CHARGED_PROJECTILES);
+                    }
+                }
             }
 
             if (this.disciplineAllowOwnerDamageTicks > 0) {
@@ -3397,6 +3423,14 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         }
 
         if (result) {
+            // Apply knockback for spears (vanilla 1.21.11: spears have inherent knockback in jab/charge attacks)
+            ItemStack weaponItem = this.getMainHandItem();
+            if (!weaponItem.isEmpty() && isSpearItem(weaponItem.getItem()) && target instanceof LivingEntity living) {
+                // Spear knockback: jab has 0.5D knockback, charge has more (vanilla behavior)
+                // Since mobs don't do charge attacks, apply jab knockback (0.5D)
+                living.knockback(0.5D, this.getX() - living.getX(), this.getZ() - living.getZ());
+            }
+            
             // SENTINEL critical hits - 15% chance for extra damage
             if (this.getRank() == MercenaryRank.SENTINEL && target instanceof LivingEntity living && this.random.nextFloat() < 0.15f) {
                 // Deal additional 3-5 damage for critical hit (simulates 50% bonus)
@@ -3445,6 +3479,17 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         }
         // Neutrales, etc.
         return 3;
+    }
+
+    private static boolean isSpearItem(Item item) {
+        // Check if item is a vanilla spear (wooden, stone, copper, iron, golden, diamond, netherite)
+        return item == Items.WOODEN_SPEAR ||
+               item == Items.STONE_SPEAR ||
+               item == Items.COPPER_SPEAR ||
+               item == Items.IRON_SPEAR ||
+               item == Items.GOLDEN_SPEAR ||
+               item == Items.DIAMOND_SPEAR ||
+               item == Items.NETHERITE_SPEAR;
     }
 
     // === Sistema de EXP y subida de rango ===

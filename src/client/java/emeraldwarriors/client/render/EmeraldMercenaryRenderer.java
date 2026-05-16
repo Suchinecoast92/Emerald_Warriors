@@ -95,7 +95,16 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
 
         super.extractRenderState(entity, state, partialTick);
 
-        state.pose = entity.getPose();
+        // Animación de nado: cuando está en agua y moviéndose, usar pose SWIMMING
+        if (entity.isInWater() && !entity.isPassenger()) {
+            Vec3 motion = entity.getDeltaMovement();
+            boolean isMoving = motion.lengthSqr() > 0.001D;
+            if (isMoving) {
+                state.pose = Pose.SWIMMING;
+            }
+        } else {
+            state.pose = entity.getPose();
+        }
 
         ItemStack main = entity.getMainHandItem();
         boolean isAdmireItem = main.is(Items.EMERALD)

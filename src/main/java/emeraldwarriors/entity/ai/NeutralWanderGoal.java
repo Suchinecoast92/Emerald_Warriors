@@ -85,6 +85,12 @@ public class NeutralWanderGoal extends Goal {
                 }
             }
 
+            // Evitar agua para wild mercenaries (solo entran al agua en combate)
+            if (this.mercenary.level().getBlockState(ground).getFluidState().isSource()
+                    || this.mercenary.level().getBlockState(ground.below()).getFluidState().isSource()) {
+                continue;  // Saltar puntos en agua
+            }
+
             if (this.mercenary.getNavigation().moveTo(
                     ground.getX() + 0.5, ground.getY(), ground.getZ() + 0.5, this.speedModifier)) {
                 return;
