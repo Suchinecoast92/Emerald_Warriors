@@ -55,8 +55,15 @@ public class MercenaryCommand {
             
             if (oldRank != newRank) {
                 rankUps++;
+                String rankName = switch (newRank) {
+                    case RECRUIT -> "Recluta";
+                    case SOLDIER -> "Soldado";
+                    case SENTINEL -> "Centinela";
+                    case VETERAN -> "Veterano";
+                    case ANCIENT_GUARD -> "Guardia Ancestral";
+                };
                 source.sendSuccess(() -> Component.literal("§6★ Mercenario " + mercenary.getId() + 
-                    " subió de rango: " + oldRank.name() + " → " + newRank.name()), false);
+                    " ascendió a " + rankName), false);
             }
         }
 
@@ -69,8 +76,8 @@ public class MercenaryCommand {
             mercenaryCount + " mercenario" + (mercenaryCount == 1 ? "" : "s")), false);
         
         if (finalRankUps > 0) {
-            source.sendSuccess(() -> Component.literal("§6★ " + finalRankUps + " mercenario" + 
-                (finalRankUps == 1 ? "" : "s") + " subió de rango!"), false);
+            player.displayClientMessage(Component.literal("§6★ " + finalRankUps + " mercenario" +
+                (finalRankUps == 1 ? "" : "s") + " subió de rango!"), true);
         }
 
         return nearbyMercenaries.size();
