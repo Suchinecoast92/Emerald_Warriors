@@ -62,8 +62,8 @@ public class MercenaryCommand {
                     case VETERAN -> "Veterano";
                     case ANCIENT_GUARD -> "Guardia Ancestral";
                 };
-                source.sendSuccess(() -> Component.literal("§6★ Mercenario " + mercenary.getId() + 
-                    " ascendió a " + rankName), false);
+                String mercName = mercenary.getMercenaryName();
+                source.sendSuccess(() -> Component.literal("§6★ " + mercName + " ascendió a " + rankName), false);
             }
         }
 

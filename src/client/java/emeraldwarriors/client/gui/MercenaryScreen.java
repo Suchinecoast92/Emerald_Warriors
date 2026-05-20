@@ -94,10 +94,8 @@ public class MercenaryScreen extends AbstractContainerScreen<MercenaryMenu> {
 
     @Override
     protected void renderLabels(GuiGraphics g, int mouseX, int mouseY) {
-        // Título: "Mercenario : Recluta"
-        int rankOrdinal = this.menu.getMercRankOrdinal();
-        String rankName = (rankOrdinal >= 0 && rankOrdinal < RANK_NAMES.length) ? RANK_NAMES[rankOrdinal] : "Recluta";
-        String fullTitle = this.title.getString() + " : " + rankName;
+        // Título: ya viene como "Nombre : Rango" desde la entidad
+        String fullTitle = this.title.getString();
         int titleWidth = this.font.width(fullTitle);
         int titleX = (this.imageWidth - titleWidth) / 2;
         g.drawString(this.font, fullTitle, titleX, this.titleLabelY, 0xFF404040, false);

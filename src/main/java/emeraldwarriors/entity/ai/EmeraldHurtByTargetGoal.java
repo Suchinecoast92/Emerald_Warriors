@@ -28,8 +28,11 @@ public class EmeraldHurtByTargetGoal extends TargetGoal {
         }
 
         UUID owner = this.mercenary.getOwnerUuid();
-        if (owner != null && lastHurtBy instanceof Player p && owner.equals(p.getUUID())) {
-            return false;
+        if (owner != null && lastHurtBy instanceof Player p) {
+            // No atacar al owner
+            if (owner.equals(p.getUUID())) {
+                return false;
+            }
         }
 
         int hurtTimestamp = this.mercenary.getLastHurtByMobTimestamp();

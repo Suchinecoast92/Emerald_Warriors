@@ -7,6 +7,7 @@ import emeraldwarriors.entity.ai.EmeraldBowAttackGoal;
 import emeraldwarriors.entity.ai.EmeraldFollowOwnerGoal;
 import emeraldwarriors.entity.ai.EmeraldHurtByTargetGoal;
 import emeraldwarriors.entity.ai.EmeraldMeleeAttackGoal;
+import emeraldwarriors.entity.ai.EmeraldNearestAttackableTargetGoal;
 import emeraldwarriors.entity.ai.EmeraldProtectOwnerGoal;
 import emeraldwarriors.entity.ai.GuardPositionGoal;
 import emeraldwarriors.entity.ai.ContractRenewWarningGoal;
@@ -102,7 +103,9 @@ import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.entity.projectile.ProjectileUtil;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttackMob, CrossbowAttackMob {
@@ -144,7 +147,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private OwnerHurtTargetGoal ownerHurtTargetGoal;
     private EmeraldHurtByTargetGoal hurtByTargetGoal;
     private DefendVillagerGoal defendVillagerGoal;
-    private NearestAttackableTargetGoal<?> nearestAttackableGoal;
+    private EmeraldNearestAttackableTargetGoal nearestAttackableGoal;
 
     private MercenaryRole lastAppliedRole = null;
     private Boolean lastAppliedHasArrows = null;
@@ -154,6 +157,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private UUID ownerUuid;
     private String ownerName;
     private String skinId;
+    private String mercenaryName; // Nombre aleatorio del mercenario
     private MercenaryRank rank = MercenaryRank.RECRUIT;
     private int contractTicksRemaining;
     private int contractEmeraldsPerService;
@@ -444,6 +448,38 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             "m21f", "m22", "m23", "m24", "m25",
             "m26", "m27f", "m28", "m29", "m30",
             "m31f", "m32f", "m33", "m34", "m35"
+    };
+
+    // Nombres aleatorios para mercenarios (estilo medieval/fantasy vanilla)
+    private static final String[] MERCENARY_NAMES = new String[] {
+            // Masculinos tradicionales
+            "Aldric", "Bram", "Cedric", "Darian", "Edric", "Falk", "Garen", "Hadric", "Ivor", "Joran",
+            "Kael", "Leoric", "Marek", "Noren", "Orik", "Perrin", "Roder", "Sven", "Torvin", "Ulric",
+            "Varek", "Wulfric", "Yorik", "Zoren", "Alaric", "Beric", "Corvin", "Dain", "Eldric", "Fenric",
+            "Garron", "Halvar", "Isen", "Jarik", "Kellan", "Lorik", "Merric", "Norvald", "Osric", "Rurik",
+            "Sten", "Tobren", "Valen", "Weylin", "Borin", "Draven", "Eogan", "Fendrel", "Arlen", "Bastion",
+            "Calder", "Derrik", "Emric", "Flint", "Godric", "Harlen", "Jorek", "Karn", "Luthor", "Maddoc",
+            "Niall", "Osmund", "Ragnar", "Silas", "Taran", "Viggo", "Wilfred", "Zarek", "Aeron", "Brand",
+            "Cassian", "Doran", "Eryk", "Farlan", "Gideon", "Hasker", "Jorund", "Kester", "Lucan", "Morric",
+            "Nash", "Odrin", "Pavel", "Rendall", "Stefan", "Theron", "Ulf", "Vern", "Warren", "Zedric",
+            // Más rudos/veteranos
+            "Blacke", "Brakk", "Crow", "Dusk", "Fang", "Grim", "Hound", "Iron", "Knox", "Mace",
+            "Rook", "Slate", "Thorn", "Vex", "Warden", "Ash", "Briar", "Crag", "Drake", "Flayer",
+            "Grit", "Hawk", "Murk", "Raven", "Skorn", "Talon", "Varric", "Wrath",
+            // Aldeano/campesino armado
+            "Bennet", "Cob", "Davin", "Eldo", "Fenn", "Giles", "Hob", "Jeb", "Kurt", "Lars",
+            "Mikkel", "Ned", "Odo", "Piers", "Reeve", "Tobin", "Wilmer", "Yann", "Bardo", "Clem",
+            "Denton", "Erwin", "Folke", "Garrick", "Harlan",
+            // Femeninos
+            "Adela", "Brina", "Celia", "Daria", "Elira", "Freya", "Greta", "Helga", "Ingrid", "Jora",
+            "Kara", "Lena", "Mira", "Nadia", "Oriana", "Petra", "Rhea", "Sigrid", "Talia", "Vera",
+            "Willa", "Ylva", "Zara", "Alina", "Brynn", "Corra", "Daphne", "Eira", "Fiora", "Gwen",
+            "Hilda", "Ivana", "Jessa", "Kiera", "Lyra", "Maela", "Nerys", "Odette", "Runa", "Selka",
+            "Thyra", "Una", "Vilda", "Wren", "Ysra",
+            // Estilo Minecraft
+            "Clay", "Brick", "Moss", "Ash", "Oak", "Birch", "Flint", "Coal", "Dust", "Torch",
+            "Patch", "Wheat", "Copper", "Stone", "Reed", "Bark", "River", "Mud", "Gravel", "Slate",
+            "Cinder", "Tuff"
     };
 
     public EmeraldMercenaryEntity(EntityType<? extends EmeraldMercenaryEntity> type, Level level) {
@@ -893,6 +929,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         if (this.skinId != null && !this.skinId.isEmpty()) {
             output.putString("SkinId", this.skinId);
         }
+        if (this.mercenaryName != null && !this.mercenaryName.isEmpty()) {
+            output.putString("MercenaryName", this.mercenaryName);
+        }
 
         if (this.contractTicksRemaining > 0) {
             output.putInt("ContractTicks", this.contractTicksRemaining);
@@ -1047,6 +1086,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         input.getString("OwnerName").ifPresent(value -> this.ownerName = value);
 
         input.getString("SkinId").ifPresent(value -> this.skinId = value);
+        input.getString("MercenaryName").ifPresent(value -> this.mercenaryName = value);
 
         input.getString("BannedOwner").ifPresent(value -> {
             try {
@@ -1453,7 +1493,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         // 2: Defender aldeanos, mercaderes errantes e iron golems atacados
         this.defendVillagerGoal = new DefendVillagerGoal(this, 32.0);
         // 3: Hostil más cercano (solo en GUARD/PATROL; se añade/quita dinámicamente)
-        this.nearestAttackableGoal = new NearestAttackableTargetGoal<>(this, Monster.class, true);
+        // Ahora ataca mobs y jugadores (excepto whitelist)
+        this.nearestAttackableGoal = new EmeraldNearestAttackableTargetGoal(this);
         // Initialized in refreshTargetGoalsByOrder() after goals are registered
 
         if (this.meleeAttackGoal != null) {
@@ -4028,12 +4069,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                     this.getX(), this.getY(0.5), this.getZ(),
                     8, 0.4, 0.5, 0.4, 0.0);
             if (p != null) {
-                // Diálogos de aceptación desactivados temporalmente
-                // String accept = (usedBundle && this.random.nextFloat() < BUNDLE_EASTER_EGG_CHANCE)
-                //         ? this.randomBundleEasterEggAcceptance()
-                //         : this.randomAcceptance();
-                // this.sendMercenaryMessage(p, accept);
-                this.sendContractInfo(p, "Contrato iniciado (" + pendingDays + " día" + (pendingDays == 1 ? "" : "s") + ")");
+                String accept = (usedBundle && this.random.nextFloat() < BUNDLE_EASTER_EGG_CHANCE)
+                        ? this.randomBundleEasterEggAcceptance()
+                        : this.randomAcceptance();
+                this.sendMercenaryMessage(p, accept);
             }
         } else if (action == PendingContractAction.RENEW_CONTRACT && renewDays > 0) {
             this.addContractDays(renewDays);
@@ -4043,15 +4082,15 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             if (this.ownerUuid != null) {
                 Player p = sl.getPlayerByUUID(this.ownerUuid);
                 if (p != null) {
-                    // Diálogos de easter egg desactivados temporalmente
-                    // if (usedBundle && this.random.nextFloat() < BUNDLE_EASTER_EGG_CHANCE) {
-                    //     this.sendMercenaryMessage(p, this.randomBundleEasterEggAcceptance());
-                    // }
+                    if (usedBundle && this.random.nextFloat() < BUNDLE_EASTER_EGG_CHANCE) {
+                        this.sendMercenaryMessage(p, this.randomBundleEasterEggAcceptance());
+                    } else {
+                        this.sendMercenaryMessage(p, this.randomAcceptance());
+                    }
                     if (usedBundle) {
                         this.currentContractBundlePayerUuid = p.getUUID();
                         this.grantBundleDiscount(p);
                     }
-                    this.sendContractInfo(p, "Contrato extendido (+" + renewDays + " día" + (renewDays == 1 ? "" : "s") + ")");
                 }
             }
         } else if (action == PendingContractAction.TERMINATE_CONTRACT) {
@@ -4066,7 +4105,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     public void sendMercenaryMessage(Player player, String body) {
         if (player instanceof ServerPlayer serverPlayer) {
-            Component prefix = Component.literal("[Mercenario] ")
+            String name = this.getMercenaryName();
+            Component prefix = Component.literal("[" + name + "] ")
                     .withStyle(ChatFormatting.GREEN);
             Component message = Component.literal("\"" + body + "\"")
                     .withStyle(ChatFormatting.GRAY, ChatFormatting.ITALIC);
@@ -4127,7 +4167,14 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         serverPlayer.openMenu(new MenuProvider() {
             @Override
             public Component getDisplayName() {
-                return EmeraldMercenaryEntity.this.getName();
+                String rankName = switch (EmeraldMercenaryEntity.this.getRank()) {
+                    case RECRUIT -> "Recluta";
+                    case SOLDIER -> "Soldado";
+                    case SENTINEL -> "Centinela";
+                    case VETERAN -> "Veterano";
+                    case ANCIENT_GUARD -> "Guardián antiguo";
+                };
+                return Component.literal(EmeraldMercenaryEntity.this.getMercenaryName() + " : " + rankName);
             }
 
             @Override
@@ -4373,11 +4420,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                         this.attentionPlayer = player.getUUID();
                         this.attentionTicks = 100; // ~5 segundos a 20 tps
 
-                        // Diálogos de propuesta desactivados temporalmente
-                        // this.sendMercenaryMessage(player, this.randomProposal());
-                        this.sendContractInfo(player,
-                                "Tarifa: " + rate + " esmeralda" + (rate == 1 ? "" : "s")
-                                        + " por " + daysPerPurchase + " día" + (daysPerPurchase == 1 ? "" : "s") + " de servicio.");
+                        this.sendMercenaryMessage(player, this.randomProposal());
                     } else {
                         // Segundo clic → contratar
                         boolean discountAvailable = this.isBundleDiscountAvailableFor(player);
@@ -4504,6 +4547,25 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     public void setSkinId(String skinId) {
         this.skinId = skinId;
+    }
+
+    /**
+     * Obtiene el nombre aleatorio del mercenario.
+     * Se asigna una vez basado en el UUID y se persiste.
+     */
+    public String getMercenaryName() {
+        if (this.mercenaryName == null || this.mercenaryName.isEmpty()) {
+            // Elegir un nombre "aleatorio" pero determinista usando el UUID persistente
+            long most = this.getUUID().getMostSignificantBits();
+            int base = (int) (most & 0x7FFFFFFFL); // valor no negativo
+            int index = base % MERCENARY_NAMES.length; // 0..(n-1)
+            this.mercenaryName = MERCENARY_NAMES[index];
+        }
+        return this.mercenaryName;
+    }
+
+    public void setMercenaryName(String name) {
+        this.mercenaryName = name;
     }
 
     /**
