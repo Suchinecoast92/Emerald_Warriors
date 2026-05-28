@@ -37,12 +37,16 @@ public class EmeraldNearestAttackableTargetGoal extends TargetGoal {
             return false;
         }
 
-        // Buscar mob hostil o jugador cercano
+        // Radio de búsqueda: PATROL busca más lejos que GUARD
         double searchRadius = 16.0;
+        if (this.mercenary.getCurrentOrder() == emeraldwarriors.mercenary.MercenaryOrder.PATROL) {
+            searchRadius = 32.0; // PATROL busca activamente en área amplia
+        }
+
         var nearby = this.mob.level().getEntitiesOfClass(
             LivingEntity.class,
             this.mob.getBoundingBox().inflate(searchRadius),
-            this::isValidTarget
+            e -> isValidTarget(e) && isWithinZone(e)
         );
 
         if (nearby.isEmpty()) {
@@ -67,6 +71,10 @@ public class EmeraldNearestAttackableTargetGoal extends TargetGoal {
     @Override
     public boolean canContinueToUse() {
         if (this.target == null || !this.target.isAlive()) {
+            return false;
+        }
+        // Si setTarget() rechazó el target silenciosamente, el mob no tiene target: parar para rescanear
+        if (this.mob.getTarget() != this.target) {
             return false;
         }
         return isValidTarget(this.target);
@@ -101,6 +109,28 @@ public class EmeraldNearestAttackableTargetGoal extends TargetGoal {
         return false;
     }
 
+    /** Verifica que el target esté dentro de la zona de operación (guardPos/patrolCenter).
+     *  Debe ser consistente con los filtros de setTarget() en EmeraldMercenaryEntity. */
+    private boolean isWithinZone(LivingEntity entity) {
+        emeraldwarriors.mercenary.MercenaryOrder order = this.mercenary.getCurrentOrder();
+        double raidBonus = this.mercenary.isRaidActive() ? 12.0 : 0.0;
+
+        if (order == emeraldwarriors.mercenary.MercenaryOrder.GUARD) {
+            net.minecraft.core.BlockPos gp = this.mercenary.getGuardPos();
+            if (gp != null) {
+                double limit = this.mercenary.getRank().getGuardRadius() + 4.0 + raidBonus;
+                return entity.distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(gp)) <= limit * limit;
+            }
+        } else if (order == emeraldwarriors.mercenary.MercenaryOrder.PATROL) {
+            net.minecraft.core.BlockPos pc = this.mercenary.getPatrolCenter();
+            if (pc != null) {
+                double limit = this.mercenary.getRank().getPatrolRadius() + 4.0 + raidBonus;
+                return entity.distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(pc)) <= limit * limit;
+            }
+        }
+        return true;
+    }
+
     @Override
     public void start() {
         this.mob.setTarget(this.target);
@@ -110,7 +140,8 @@ public class EmeraldNearestAttackableTargetGoal extends TargetGoal {
     @Override
     public void stop() {
         this.target = null;
-        this.cooldown = 20;
+        // Cooldown más corto para PATROL para búsqueda más frecuente
+        this.cooldown = (this.mercenary.getCurrentOrder() == emeraldwarriors.mercenary.MercenaryOrder.PATROL) ? 10 : 20;
         super.stop();
     }
 }

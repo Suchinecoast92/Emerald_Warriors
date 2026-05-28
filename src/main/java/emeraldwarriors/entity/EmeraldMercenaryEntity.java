@@ -1854,18 +1854,22 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         } else if (this.ownerDisciplineStrikes == 2) {
             this.ownerDisciplineCounterWithWeapon = ownerUsedWeapon;
             int lookTicks = 20 + this.random.nextInt(11);
-            int slapTicks = 60 + this.random.nextInt(21);
+            int slapTicks = 36 + this.random.nextInt(13); // Reducido 40% (60-81 → 36-48)
             this.ownerDisciplineLookTicks = lookTicks;
             this.ownerDisciplineSlapCountdown = slapTicks;
 
+            // No levantar escudo si tiene arco/ballesta equipado
             ItemStack offhand = this.getOffhandItem();
             ItemStack main = this.getMainHandItem();
-            if (isShieldLikeStack(offhand)) {
-                this.startUsingItem(InteractionHand.OFF_HAND);
-                this.reactiveShieldTicks = Math.max(this.reactiveShieldTicks, slapTicks);
-            } else if (isShieldLikeStack(main)) {
-                this.startUsingItem(InteractionHand.MAIN_HAND);
-                this.reactiveShieldTicks = Math.max(this.reactiveShieldTicks, slapTicks);
+            boolean hasRanged = !main.isEmpty() && (main.getItem() instanceof BowItem || main.getItem() instanceof CrossbowItem);
+            if (!hasRanged) {
+                if (isShieldLikeStack(offhand)) {
+                    this.startUsingItem(InteractionHand.OFF_HAND);
+                    this.reactiveShieldTicks = Math.max(this.reactiveShieldTicks, slapTicks);
+                } else if (isShieldLikeStack(main)) {
+                    this.startUsingItem(InteractionHand.MAIN_HAND);
+                    this.reactiveShieldTicks = Math.max(this.reactiveShieldTicks, slapTicks);
+                }
             }
         } else {
             this.breakContractFromDiscipline(owner);
@@ -2221,25 +2225,27 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         if (this.getRank() == MercenaryRank.VETERAN && this.random.nextFloat() < 0.25f) {
             ItemStack mainHand = this.getMainHandItem();
             ItemStack offHand = this.getOffhandItem();
-            
-            // Check if has shield equipped
-            if (isShieldLikeStack(mainHand) || isShieldLikeStack(offHand)) {
+
+            // Check if has shield equipped and NOT ranged weapon
+            boolean hasShield = isShieldLikeStack(mainHand) || isShieldLikeStack(offHand);
+            boolean hasRanged = !mainHand.isEmpty() && (mainHand.getItem() instanceof BowItem || mainHand.getItem() instanceof CrossbowItem);
+            if (hasShield && !hasRanged) {
                 // Anticipate attack - reduce damage by 20%
                 amount *= 0.8f;
-                
+
                 // Play shield block sound
                 level.playSound(null, this.getX(), this.getY(), this.getZ(),
                         SoundEvents.SHIELD_BLOCK, SoundSource.HOSTILE, 0.8f, 1.0f);
-                
+
                 // Brief shield raise animation (if not already using item)
                 if (!this.isUsingItem()) {
                     if (isShieldLikeStack(offHand)) {
                         this.startUsingItem(InteractionHand.OFF_HAND);
                         // Stop using shield after a brief moment (will be handled by existing reactive shield code)
-                        this.reactiveShieldTicks = Math.max(this.reactiveShieldTicks, 10);
+                        this.reactiveShieldTicks = Math.max(this.reactiveShieldTicks, 6); // Reducido 40% (10 → 6)
                     } else if (isShieldLikeStack(mainHand)) {
                         this.startUsingItem(InteractionHand.MAIN_HAND);
-                        this.reactiveShieldTicks = Math.max(this.reactiveShieldTicks, 10);
+                        this.reactiveShieldTicks = Math.max(this.reactiveShieldTicks, 6); // Reducido 40% (10 → 6)
                     }
                 }
             }
@@ -2352,14 +2358,14 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             }
             
             if (order == MercenaryOrder.GUARD && this.guardPos != null) {
-                // GUARD: only accept targets within guardRadius+4 of the guard post
-                double limit = this.getRank().getGuardRadius() + 4.0;
+                // GUARD: accept targets within guardRadius+4+raidBonus of the guard post
+                double limit = this.getRank().getGuardRadius() + 4.0 + raidBonus;
                 if (target.distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(this.guardPos)) > limit * limit) {
                     return;
                 }
             } else if (order == MercenaryOrder.PATROL && this.patrolCenter != null) {
-                // PATROL: only accept targets within patrolRadius+12 during raids
-                double limit = this.getRank().getPatrolRadius() + raidBonus;
+                // PATROL: accept targets within patrolRadius+4+raidBonus of patrolCenter
+                double limit = this.getRank().getPatrolRadius() + 4.0 + raidBonus;
                 if (target.distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(this.patrolCenter)) > limit * limit) {
                     return;
                 }
@@ -3140,8 +3146,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             DamageSource lastDamage = this.getLastDamageSource();
             if (lastDamage != null && lastDamage != this.lastReactiveDamageSource) {
                 if (this.shouldRaiseShieldFromDamage(lastDamage)) {
-                    // Mantener el escudo arriba al menos ~2.5s tras recibir daño
-                    this.reactiveShieldTicks = 140;
+                    // Mantener el escudo arriba al menos ~1.5s tras recibir daño (reducido 40%)
+                    this.reactiveShieldTicks = 84;
                 }
                 this.lastReactiveDamageSource = lastDamage;
             }
@@ -3154,10 +3160,14 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                     ItemStack offhand = this.getOffhandItem();
                     ItemStack main = this.getMainHandItem();
 
-                    if (isShieldLikeStack(offhand)) {
-                        this.startUsingItem(InteractionHand.OFF_HAND);
-                    } else if (isShieldLikeStack(main)) {
-                        this.startUsingItem(InteractionHand.MAIN_HAND);
+                    // No usar escudo si tiene arco/ballesta equipado
+                    boolean hasRanged = !main.isEmpty() && (main.getItem() instanceof BowItem || main.getItem() instanceof CrossbowItem);
+                    if (!hasRanged) {
+                        if (isShieldLikeStack(offhand)) {
+                            this.startUsingItem(InteractionHand.OFF_HAND);
+                        } else if (isShieldLikeStack(main)) {
+                            this.startUsingItem(InteractionHand.MAIN_HAND);
+                        }
                     }
                 } else if (this.reactiveShieldTicks == 0 && isShieldLikeStack(this.getUseItem())) {
                     this.stopUsingItem();
@@ -3313,6 +3323,12 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
         boolean hasShield = isShieldLikeStack(main) || isShieldLikeStack(offhand);
         if (!hasShield) {
+            return false;
+        }
+
+        // No usar escudo si tiene arco/ballesta equipado (comportamiento vanilla)
+        boolean hasRanged = !main.isEmpty() && (main.getItem() instanceof BowItem || main.getItem() instanceof CrossbowItem);
+        if (hasRanged) {
             return false;
         }
 

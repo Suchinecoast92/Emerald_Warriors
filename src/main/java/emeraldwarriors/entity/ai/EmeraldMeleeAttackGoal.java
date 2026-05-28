@@ -298,6 +298,11 @@ public class EmeraldMeleeAttackGoal extends Goal {
     protected void checkAndPerformAttack(LivingEntity target, double distanceSqr) {
         double attackReachSqr = this.getAttackReachSqr(target);
 
+        // No atacar si está usando el escudo (comportamiento vanilla: una acción a la vez)
+        if (this.mob.isUsingItem()) {
+            return;
+        }
+
         if (this.isWithinAttackRange(target, attackReachSqr) && this.ticksUntilNextAttack <= 0) {
             this.resetAttackCooldown();
             // Always trigger swing animation before attacking
