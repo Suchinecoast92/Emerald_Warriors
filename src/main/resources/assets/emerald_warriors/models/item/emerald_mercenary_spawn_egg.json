@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "emerald_warriors:item/emerald_mercenary_spawn_egg"
+  }
+}

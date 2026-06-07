@@ -39,8 +39,10 @@ public class EmeraldProtectOwnerGoal extends TargetGoal {
         }
 
         if (attacker instanceof Player player) {
-            this.mercenary.onOwnerAttackedByPlayer(player, owner);
-            if (!this.mercenary.isPlayerMarkedHostile(player)) {
+            if (!this.mercenary.allowPlayerTargets()) {
+                return false;
+            }
+            if (!this.mercenary.canObserveOwnerAttackByPlayer(player, owner)) {
                 return false;
             }
         }

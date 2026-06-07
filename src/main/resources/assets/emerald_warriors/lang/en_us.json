@@ -1,4 +1,5 @@
 {
   "entity.emerald_warriors.emerald_mercenary": "Mercenary",
-  "container.emerald_warriors.mercenary": "Mercenary"
+  "container.emerald_warriors.mercenary": "Mercenary",
+  "item.emerald_warriors.emerald_mercenary_spawn_egg": "Mercenary Spawn Egg"
 }

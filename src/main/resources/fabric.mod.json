@@ -2,14 +2,15 @@
 	"schemaVersion": 1,
 	"id": "emerald_warriors",
 	"version": "${version}",
-	"name": "Emerald_Warriors",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"name": "Emerald Warriors",
+	"description": "Contrata mercenarios con esmeraldas. Órdenes, combate, rangos y PvP configurable.",
 	"authors": [
-		"Me!"
+		"Suchinecoast92"
 	],
 	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
+		"homepage": "https://github.com/Suchinecoast92/Emerald_Warriors",
+		"sources": "https://github.com/Suchinecoast92/Emerald_Warriors",
+		"issues": "https://github.com/Suchinecoast92/Emerald_Warriors/issues"
 	},
 	"license": "CC0-1.0",
 	"icon": "assets/emerald_warriors/icon.png",

@@ -91,7 +91,9 @@ public class MercenaryScreen extends AbstractContainerScreen<MercenaryMenu> {
                     }
                 })
                 .bounds(playerToggleX, playerToggleY, PLAYER_TOGGLE_SIZE, PLAYER_TOGGLE_SIZE)
-                .tooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal("Permitir combate contra jugadores en Guardia/Patrulla")))
+                .tooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal(
+                        "PvP automatico contra jugadores. Siempre te ayuda si tu atacas primero."
+                )))
                 .build());
         this.updateTerminateButton();
         this.updatePlayerTargetsButton();
@@ -228,7 +230,7 @@ public class MercenaryScreen extends AbstractContainerScreen<MercenaryMenu> {
             return false;
         }
         MercenaryOrder order = MercenaryOrder.values()[ordinal];
-        return order == MercenaryOrder.GUARD || order == MercenaryOrder.PATROL;
+        return order == MercenaryOrder.FOLLOW || order == MercenaryOrder.GUARD || order == MercenaryOrder.PATROL;
     }
 
     private void updateTerminateButton() {
@@ -261,7 +263,9 @@ public class MercenaryScreen extends AbstractContainerScreen<MercenaryMenu> {
         boolean enabled = this.menu.allowPlayerTargets();
         this.playerTargetsButton.setMessage(Component.literal(enabled ? "x" : ""));
         this.playerTargetsButton.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal(
-                enabled ? "Jugadores: ON" : "Jugadores: OFF"
+                enabled
+                        ? "Jugadores: ON — defiende al dueno y PvP territorial"
+                        : "Jugadores: OFF — ignora golpes al dueno; te ayuda si tu atacas"
         )));
     }
 

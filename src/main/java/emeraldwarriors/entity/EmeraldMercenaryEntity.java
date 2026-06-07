@@ -118,10 +118,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private static final int CONTRACT_EXPIRE_APPROACH_TICKS = 80;
     private static final int CONTRACT_EXPIRE_RETREAT_DELAY_TICKS = 20;
     private static final double CONTRACT_EXPIRE_RETREAT_SPEED = 0.65D;
-    private static final int PLAYER_HOSTILITY_WINDOW_TICKS = 600;
-    private static final int PLAYER_HOSTILITY_WARN_TICKS = 50;
     private static final double PLAYER_HOSTILITY_OBSERVE_RANGE = 16.0D;
-    private static final double PLAYER_HOSTILITY_WARN_DISTANCE = 4.0D;
     private static final double BROTHERHOOD_ASSIST_RANGE = 16.0D;
     private static final int BROTHERHOOD_ASSIST_TICKS = 100;
 
@@ -202,12 +199,6 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private int brotherhoodAssistLockTicks;
     private int wildRegenTicks;
 
-    private UUID hostilePlayerUuid;
-    private int hostilePlayerStrikes;
-    private long hostilePlayerWindowEndGameTime;
-    private boolean hostilePlayerPersistent;
-    private int hostilePlayerWarnTicks;
-    private int hostilePlayerLastOwnerHurtTimestamp;
     private boolean allowPlayerTargets;
 
     // Sistema de órdenes
@@ -996,15 +987,6 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         if (this.allowPlayerTargets) {
             output.putInt("AllowPlayerTargets", 1);
         }
-        if (this.hostilePlayerUuid != null) {
-            output.putString("HostilePlayer", this.hostilePlayerUuid.toString());
-            if (this.hostilePlayerStrikes > 0) {
-                output.putInt("HostilePlayerStrikes", this.hostilePlayerStrikes);
-            }
-            if (this.hostilePlayerPersistent) {
-                output.putInt("HostilePlayerPersistent", 1);
-            }
-        }
 
         if (this.bundleDiscountPlayerUuid != null && this.bundleDiscountPercent > 0 && this.bundleDiscountUsesRemaining > 0) {
             output.putString("BundleDiscountPlayer", this.bundleDiscountPlayerUuid.toString());
@@ -1091,7 +1073,6 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
         this.bannedOwnerUuid = null;
         this.bannedUntilDay = 0;
-        this.clearHostilePlayerMemory();
 
         this.bundleDiscountPlayerUuid = null;
         this.bundleDiscountPercent = 0;
@@ -1127,18 +1108,6 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         });
         this.bannedUntilDay = input.getIntOr("BannedUntilDay", this.bannedUntilDay);
         this.allowPlayerTargets = input.getIntOr("AllowPlayerTargets", this.allowPlayerTargets ? 1 : 0) != 0;
-        input.getString("HostilePlayer").ifPresent(value -> {
-            try {
-                this.hostilePlayerUuid = UUID.fromString(value);
-            } catch (IllegalArgumentException ignored) {
-                this.hostilePlayerUuid = null;
-            }
-        });
-        this.hostilePlayerStrikes = input.getIntOr("HostilePlayerStrikes", this.hostilePlayerStrikes);
-        this.hostilePlayerPersistent = input.getIntOr("HostilePlayerPersistent", this.hostilePlayerPersistent ? 1 : 0) != 0;
-        this.hostilePlayerWarnTicks = 0;
-        this.hostilePlayerWindowEndGameTime = 0L;
-        this.hostilePlayerLastOwnerHurtTimestamp = 0;
 
         input.getString("BundleDiscountPlayer").ifPresent(value -> {
             try {
@@ -1741,7 +1710,6 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.lastOwnerKnownPos = player.position();
 
         this.updateOwnerCombatBaselines();
-        this.clearHostilePlayerMemory();
     }
 
     private boolean isOwnerPlayer(Player player) {
@@ -1782,13 +1750,6 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     }
 
 
-    public boolean isPlayerMarkedHostile(Player player) {
-        return player != null
-                && this.hostilePlayerPersistent
-                && this.hostilePlayerUuid != null
-                && this.hostilePlayerUuid.equals(player.getUUID());
-    }
-
     public boolean canInitiatePvpAgainst(Player player) {
         if (player == null || player.isCreative() || player.isSpectator()) {
             return false;
@@ -1796,36 +1757,11 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         if (this.ownerUuid != null && this.ownerUuid.equals(player.getUUID())) {
             return false;
         }
-        if (this.isPlayerMarkedHostile(player)) {
-            return true;
-        }
         MercenaryOrder order = this.getCurrentOrder();
         return this.allowPlayerTargets && (order == MercenaryOrder.GUARD || order == MercenaryOrder.PATROL);
     }
 
-    public boolean isHostileToPlayerUuid(UUID playerUuid) {
-        return playerUuid != null
-                && this.hostilePlayerPersistent
-                && this.hostilePlayerUuid != null
-                && this.hostilePlayerUuid.equals(playerUuid);
-    }
-
-    public void clearTrackedHostilePlayer(UUID playerUuid) {
-        if (playerUuid != null && this.hostilePlayerUuid != null && this.hostilePlayerUuid.equals(playerUuid)) {
-            this.clearHostilePlayerMemory();
-        }
-    }
-
-    private void clearHostilePlayerMemory() {
-        this.hostilePlayerUuid = null;
-        this.hostilePlayerStrikes = 0;
-        this.hostilePlayerWindowEndGameTime = 0L;
-        this.hostilePlayerPersistent = false;
-        this.hostilePlayerWarnTicks = 0;
-        this.hostilePlayerLastOwnerHurtTimestamp = 0;
-    }
-
-    private boolean canObserveOwnerAttackByPlayer(Player attacker, LivingEntity owner) {
+    public boolean canObserveOwnerAttackByPlayer(Player attacker, LivingEntity owner) {
         if (attacker == null || owner == null || !attacker.isAlive() || !owner.isAlive()) {
             return false;
         }
@@ -1836,69 +1772,22 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                 || this.distanceToSqr(owner) <= maxSqr;
     }
 
-    public void onOwnerAttackedByPlayer(Player attacker, LivingEntity owner) {
-        if (!(this.level() instanceof ServerLevel sl)) {
+    private void releaseAutomaticPlayerTarget() {
+        LivingEntity target = this.getTarget();
+        if (!(target instanceof Player player)) {
             return;
         }
-        if (attacker == null || owner == null || !attacker.isAlive() || !owner.isAlive()) {
+        boolean selfDefense = target == this.getLastHurtByMob()
+                && this.tickCount - this.getLastHurtByMobTimestamp() < 100;
+        if (selfDefense || this.isOwnerDirectedTarget(target)) {
             return;
         }
-        if (!this.canObserveOwnerAttackByPlayer(attacker, owner)) {
-            return;
-        }
-
-        long now = this.level().getGameTime();
-        int hurtTimestamp = owner.getLastHurtByMobTimestamp();
-        UUID attackerId = attacker.getUUID();
-        boolean sameTrackedPlayer = this.hostilePlayerUuid != null && this.hostilePlayerUuid.equals(attackerId);
-        if (!sameTrackedPlayer) {
-            this.hostilePlayerUuid = attackerId;
-            this.hostilePlayerStrikes = 0;
-            this.hostilePlayerPersistent = false;
-            this.hostilePlayerWarnTicks = 0;
-            this.hostilePlayerLastOwnerHurtTimestamp = 0;
-        } else if (!this.hostilePlayerPersistent && now > this.hostilePlayerWindowEndGameTime) {
-            this.hostilePlayerStrikes = 0;
-            this.hostilePlayerWarnTicks = 0;
-        }
-
-        if (this.hostilePlayerLastOwnerHurtTimestamp == hurtTimestamp) {
-            return;
-        }
-        this.hostilePlayerLastOwnerHurtTimestamp = hurtTimestamp;
-
-        this.hostilePlayerWindowEndGameTime = now + PLAYER_HOSTILITY_WINDOW_TICKS;
-        if (this.hostilePlayerPersistent) {
-            this.setTarget(attacker);
-            this.setAggressive(true);
-            return;
-        }
-
-        this.hostilePlayerStrikes = Math.min(3, this.hostilePlayerStrikes + 1);
-        if (this.hostilePlayerStrikes == 1) {
-            return;
-        }
-
         this.setTarget(null);
         this.setAggressive(false);
         this.getNavigation().stop();
         if (this.isUsingItem()) {
             this.stopUsingItem();
         }
-
-        if (this.hostilePlayerStrikes == 2) {
-            this.hostilePlayerWarnTicks = PLAYER_HOSTILITY_WARN_TICKS;
-            sl.sendParticles(ParticleTypes.ANGRY_VILLAGER,
-                    this.getX(), this.getY() + 1.0, this.getZ(), 8, 0.4, 0.5, 0.4, 0.0);
-            return;
-        }
-
-        this.hostilePlayerPersistent = true;
-        this.hostilePlayerWarnTicks = 0;
-        sl.sendParticles(ParticleTypes.ANGRY_VILLAGER,
-                this.getX(), this.getY() + 1.0, this.getZ(), 12, 0.5, 0.6, 0.5, 0.0);
-        this.setTarget(attacker);
-        this.setAggressive(true);
     }
 
     public void onOwnerMeleeHit(Player owner) {
@@ -1944,7 +1833,6 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.ownerName = null;
         this.contractTicksRemaining = 0;
         this.currentContractBundlePayerUuid = null;
-        this.clearHostilePlayerMemory();
         this.pendingContractPlayer = null;
         this.attentionPlayer = null;
         this.attentionTicks = 0;
@@ -2310,6 +2198,30 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         return this.distanceToSqr(owner) <= maxSqr || this.distanceToSqr(target) <= maxSqr;
     }
 
+    private boolean isOwnerDefenseTarget(LivingEntity target) {
+        if (!this.allowPlayerTargets || !(target instanceof Player)) {
+            return false;
+        }
+        LivingEntity owner = this.getOwner();
+        if (owner == null || !owner.isAlive()) {
+            return false;
+        }
+        if (owner.getLastHurtByMob() != target) {
+            return false;
+        }
+        Player player = (Player) target;
+        if (player.isCreative() || player.isSpectator()) {
+            return false;
+        }
+
+        int ts = owner.getLastHurtByMobTimestamp();
+        if (ts <= this.ownerLastHurtByMobTimestampBaseline) {
+            return false;
+        }
+        int age = owner.tickCount - ts;
+        return age >= 0 && age <= 100;
+    }
+
     @Override
     public float getWalkTargetValue(BlockPos pos) {
         // Evitar polvo de nieve - es mortal para los mercenarios
@@ -2368,6 +2280,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
             if (target instanceof Player p
                     && !this.isOwnerDirectedTarget(target)
+                    && !this.isOwnerDefenseTarget(target)
                     && !this.isBrotherhoodAssistTarget(target)
                     && !(this.disciplineExOwnerUuid != null
                             && this.disciplineExOwnerUuid.equals(p.getUUID())
@@ -2394,7 +2307,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
             boolean recentAttacker = (target == this.getLastHurtByMob())
                     && (this.tickCount - this.getLastHurtByMobTimestamp() < 100);
-            if (recentAttacker) {
+            if (recentAttacker || this.isOwnerDefenseTarget(target)) {
                 super.setTarget(target);
                 return;
             }
@@ -2974,32 +2887,6 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                 if (this.disciplineExOwnerRetreatTicks <= 0) {
                     this.disciplineExOwnerRetreatTicks = 0;
                     this.disciplineExOwnerUuid = null;
-                }
-            }
-
-            if (this.hostilePlayerUuid != null) {
-                Player hostile = this.level().getPlayerByUUID(this.hostilePlayerUuid);
-                if (!this.hostilePlayerPersistent && this.level().getGameTime() > this.hostilePlayerWindowEndGameTime) {
-                    this.clearHostilePlayerMemory();
-                } else if (hostile == null && !this.hostilePlayerPersistent) {
-                    this.clearHostilePlayerMemory();
-                }
-            }
-
-            if (this.hostilePlayerWarnTicks > 0 && this.hostilePlayerUuid != null && this.ownerUuid != null) {
-                this.setTarget(null);
-                this.setAggressive(false);
-                Player hostile = this.level().getPlayerByUUID(this.hostilePlayerUuid);
-                if (hostile == null) {
-                    this.clearHostilePlayerMemory();
-                } else {
-                    this.getLookControl().setLookAt(hostile, 30.0F, this.getMaxHeadXRot());
-                    if (this.distanceToSqr(hostile) > PLAYER_HOSTILITY_WARN_DISTANCE * PLAYER_HOSTILITY_WARN_DISTANCE) {
-                        this.getNavigation().moveTo(hostile, 1.1D);
-                    } else {
-                        this.getNavigation().stop();
-                    }
-                    this.hostilePlayerWarnTicks--;
                 }
             }
 
@@ -4150,10 +4037,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         }
 
         this.allowPlayerTargets = !this.allowPlayerTargets;
-        if (!this.allowPlayerTargets && this.getTarget() instanceof Player) {
-            this.setTarget(null);
-            this.setAggressive(false);
-            this.getNavigation().stop();
+        if (!this.allowPlayerTargets) {
+            this.releaseAutomaticPlayerTarget();
         }
         return true;
     }
@@ -4236,7 +4121,6 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.contractRenewWarned = false;
         this.contractExpirePending = false;
         this.currentContractBundlePayerUuid = null;
-        this.clearHostilePlayerMemory();
 
         this.pendingContractPlayer = null;
         this.attentionPlayer = null;

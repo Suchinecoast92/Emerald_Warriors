@@ -6,6 +6,7 @@ import emeraldwarriors.entity.EmeraldMercenaryEntity;
 import emeraldwarriors.entity.ModEntities;
 import emeraldwarriors.entity.spawn.VillageMercenarySpawner;
 import emeraldwarriors.horn.MercenaryHornListener;
+import emeraldwarriors.item.ModItems;
 import emeraldwarriors.menu.ModMenus;
 import emeraldwarriors.worldgen.ModWorldgen;
 import net.fabricmc.api.ModInitializer;
@@ -37,6 +38,7 @@ public class Emerald_Warriors implements ModInitializer {
 		ModConfig.load();
 
 		ModEntities.registerAttributes();
+		ModItems.register();
 		ModMenus.register();
 		MercenaryHornListener.register();
 		ModWorldgen.register();
@@ -109,33 +111,6 @@ public class Emerald_Warriors implements ModInitializer {
 				}
 			}
 			return true;
-		});
-
-		ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
-			if (!(entity instanceof Player deadPlayer) || !(entity.level() instanceof net.minecraft.server.level.ServerLevel sl)) {
-				return;
-			}
-
-			LivingEntity killer = null;
-			if (source.getEntity() instanceof LivingEntity living) {
-				killer = living;
-			} else if (source.getDirectEntity() instanceof Projectile proj && proj.getOwner() instanceof LivingEntity living) {
-				killer = living;
-			}
-
-			if (!(killer instanceof EmeraldMercenaryEntity killerMerc)) {
-				return;
-			}
-			if (!killerMerc.isHostileToPlayerUuid(deadPlayer.getUUID())) {
-				return;
-			}
-
-			for (EmeraldMercenaryEntity merc : sl.getEntitiesOfClass(
-					EmeraldMercenaryEntity.class,
-					deadPlayer.getBoundingBox().inflate(64.0D),
-					m -> m.isHostileToPlayerUuid(deadPlayer.getUUID()))) {
-				merc.clearTrackedHostilePlayer(deadPlayer.getUUID());
-			}
 		});
 
 		// Register commands
