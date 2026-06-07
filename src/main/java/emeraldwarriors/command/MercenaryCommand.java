@@ -55,14 +55,8 @@ public class MercenaryCommand {
             
             if (oldRank != newRank) {
                 rankUps++;
-                String rankName = switch (newRank) {
-                    case RECRUIT -> "Recluta";
-                    case SOLDIER -> "Soldado";
-                    case SENTINEL -> "Centinela";
-                    case VETERAN -> "Veterano";
-                    case ANCIENT_GUARD -> "Guardia Ancestral";
-                };
                 String mercName = mercenary.getMercenaryName();
+                String rankName = newRank.getDisplayName();
                 source.sendSuccess(() -> Component.literal("§6★ " + mercName + " ascendió a " + rankName), false);
             }
         }

@@ -245,33 +245,34 @@ public class RetreatLowHpGoal extends Goal {
             if (moveAwayFromThreat(this.threat)) {
                 return;
             }
-            if (this.retreatAnchor != null) {
-                this.mercenary.getNavigation().moveTo(
-                        this.retreatAnchor.getX() + 0.5, this.retreatAnchor.getY(), this.retreatAnchor.getZ() + 0.5, this.speedModifier);
-                return;
-            }
         }
+
         MercenaryOrder order = this.mercenary.getCurrentOrder();
         switch (order) {
             case GUARD -> {
                 BlockPos guard = this.mercenary.getGuardPos();
-                if (guard != null) {
+                if (guard != null && isRetreatPointSafer(guard, this.threat)) {
                     this.mercenary.getNavigation().moveTo(
                             guard.getX() + 0.5, guard.getY(), guard.getZ() + 0.5, this.speedModifier);
+                } else if (this.threat != null && this.threat.isAlive()) {
+                    moveAwayFromThreat(this.threat);
                 }
             }
             case PATROL, NEUTRAL -> {
                 BlockPos center = this.mercenary.getPatrolCenter();
-                if (center != null) {
+                if (center != null && isRetreatPointSafer(center, this.threat)) {
                     this.mercenary.getNavigation().moveTo(
                             center.getX() + 0.5, center.getY(), center.getZ() + 0.5, this.speedModifier);
+                } else if (this.threat != null && this.threat.isAlive()) {
+                    moveAwayFromThreat(this.threat);
                 }
             }
             default -> {
-                // FOLLOW: huir hacia el dueño
                 LivingEntity owner = this.mercenary.getOwner();
-                if (owner != null) {
+                if (owner != null && isRetreatPointSafer(owner.blockPosition(), this.threat)) {
                     this.mercenary.getNavigation().moveTo(owner, this.speedModifier);
+                } else if (this.threat != null && this.threat.isAlive()) {
+                    moveAwayFromThreat(this.threat);
                 }
             }
         }
@@ -311,37 +312,64 @@ public class RetreatLowHpGoal extends Goal {
         return null;
     }
 
-    private boolean moveAwayFromThreat(LivingEntity threat) {
-        BlockPos anchor = this.retreatAnchor;
-        if (anchor == null) {
-            anchor = new BlockPos(Mth.floor(this.mercenary.getX()), Mth.floor(this.mercenary.getY()), Mth.floor(this.mercenary.getZ()));
+    private boolean isRetreatPointSafer(BlockPos point, LivingEntity threat) {
+        if (threat == null || !threat.isAlive()) {
+            return true;
         }
+        double currentDistSqr = threat.distanceToSqr(this.mercenary);
+        double pointDistSqr = threat.distanceToSqr(point.getX() + 0.5, point.getY(), point.getZ() + 0.5);
+        return pointDistSqr > currentDistSqr + 4.0;
+    }
 
-        double ax = anchor.getX() + 0.5;
-        double az = anchor.getZ() + 0.5;
+    private boolean moveAwayFromThreat(LivingEntity threat) {
+        double mx = this.mercenary.getX();
+        double mz = this.mercenary.getZ();
+        double tx = threat.getX();
+        double tz = threat.getZ();
 
-        double dx = ax - threat.getX();
-        double dz = az - threat.getZ();
+        double dx = mx - tx;
+        double dz = mz - tz;
         double lenSq = dx * dx + dz * dz;
         if (lenSq < 1.0E-4) {
-            dx = this.mercenary.getX() - threat.getX();
-            dz = this.mercenary.getZ() - threat.getZ();
-            lenSq = dx * dx + dz * dz;
-        }
-        if (lenSq < 1.0E-4) {
-            return false;
+            double angle = this.mercenary.getRandom().nextDouble() * Math.PI * 2.0D;
+            dx = Math.cos(angle);
+            dz = Math.sin(angle);
+            lenSq = 1.0D;
         }
 
         double len = Math.sqrt(lenSq);
         dx /= len;
         dz /= len;
 
+        BlockPos anchor = this.retreatAnchor;
+        if (anchor != null) {
+            double ax = anchor.getX() + 0.5 - mx;
+            double az = anchor.getZ() + 0.5 - mz;
+            double aLenSq = ax * ax + az * az;
+            if (aLenSq > 1.0E-4) {
+                double aLen = Math.sqrt(aLenSq);
+                ax /= aLen;
+                az /= aLen;
+                double dot = dx * ax + dz * az;
+                if (dot > 0.0D) {
+                    dx = dx * 0.7D + ax * 0.3D;
+                    dz = dz * 0.7D + az * 0.3D;
+                    len = Math.sqrt(dx * dx + dz * dz);
+                    if (len > 1.0E-4) {
+                        dx /= len;
+                        dz /= len;
+                    }
+                }
+            }
+        }
+
         LivingEntity owner = this.mercenary.getOwner();
         double maxOwnerDist = Math.min(this.mercenary.getRank().getMaxChaseFromAnchor() * 1.25, 16.0);
         double maxOwnerDistSqr = maxOwnerDist * maxOwnerDist;
 
         double dist = 10.0;
-        double[] angles = new double[]{0.0, 0.5235987755982988, -0.5235987755982988, 1.0471975511965976, -1.0471975511965976, 1.5707963267948966, -1.5707963267948966};
+        double[] angles = new double[]{0.0, 0.4, -0.4, 0.8, -0.8, 1.2, -1.2};
+        double currentDistSqr = threat.distanceToSqr(this.mercenary);
 
         for (double angle : angles) {
             double cos = Math.cos(angle);
@@ -349,9 +377,9 @@ public class RetreatLowHpGoal extends Goal {
             double rdx = dx * cos - dz * sin;
             double rdz = dx * sin + dz * cos;
 
-            double x = ax + rdx * dist;
-            double z = az + rdz * dist;
-            double y = anchor.getY();
+            double x = mx + rdx * dist;
+            double z = mz + rdz * dist;
+            double y = this.mercenary.getY();
 
             if (owner != null) {
                 double odx = x - owner.getX();
@@ -366,14 +394,12 @@ public class RetreatLowHpGoal extends Goal {
                 }
             }
 
-            double currentDistSq = threat.distanceToSqr(this.mercenary);
-            double candidateDistSq = threat.distanceToSqr(x, y, z);
-            if (candidateDistSq <= currentDistSq + 4.0) {
+            double candidateDistSqr = threat.distanceToSqr(x, y, z);
+            if (candidateDistSqr <= currentDistSqr + 1.0) {
                 continue;
             }
 
             BlockPos target = new BlockPos(Mth.floor(x), Mth.floor(y), Mth.floor(z));
-
             BlockPos ground = target;
             for (int dy = 3; dy >= -3; dy--) {
                 BlockPos check = target.offset(0, dy, 0);

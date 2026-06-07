@@ -41,4 +41,15 @@ public enum MercenaryRank {
     public int getGuardRadius() { return this.guardRadius; }
     public int getPatrolRadius() { return this.patrolRadius; }
     public double getRetreatHpFraction() { return this.retreatHpFraction; }
+
+    /** Nombres alineados con los rangos de aldeano en español. */
+    public String getDisplayName() {
+        return switch (this) {
+            case RECRUIT -> "Recluta";
+            case SOLDIER -> "Novato";
+            case SENTINEL -> "Aprendiz";
+            case VETERAN -> "Cualificado";
+            case ANCIENT_GUARD -> "Experto";
+        };
+    }
 }

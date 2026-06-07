@@ -34,6 +34,10 @@ public class EmeraldMeleeAttackGoal extends Goal {
     private int ticksUntilNextPathRecalculation;
     private int ticksUntilNextAttack;
     private long lastCanUseCheck;
+    private int flankAngleSeed;
+    private boolean strafeRight;
+    private int strafeTicks;
+    private int shieldDropWindupTicks;
 
     public EmeraldMeleeAttackGoal(EmeraldMercenaryEntity mob, double speedModifier, boolean followingTargetEvenIfNotSeen) {
         this.mob = mob;
@@ -155,6 +159,10 @@ public class EmeraldMeleeAttackGoal extends Goal {
         this.mob.setAggressive(true);
         this.ticksUntilNextPathRecalculation = 0;
         this.ticksUntilNextAttack = 0;
+        this.flankAngleSeed = this.mob.getRandom().nextInt(360);
+        this.strafeRight = this.mob.getRandom().nextBoolean();
+        this.strafeTicks = 0;
+        this.shieldDropWindupTicks = 0;
     }
 
     @Override
@@ -165,6 +173,8 @@ public class EmeraldMeleeAttackGoal extends Goal {
         }
         this.mob.setAggressive(false);
         this.mob.getNavigation().stop();
+        this.shieldDropWindupTicks = 0;
+        this.mob.getMoveControl().strafe(0.0F, 0.0F);
     }
 
     @Override
@@ -203,7 +213,7 @@ public class EmeraldMeleeAttackGoal extends Goal {
                 && this.ticksUntilNextPathRecalculation <= 0
                 && (this.pathedTargetX == 0.0D && this.pathedTargetY == 0.0D && this.pathedTargetZ == 0.0D
                 || target.distanceToSqr(this.pathedTargetX, this.pathedTargetY, this.pathedTargetZ) >= (isPlayerTarget ? 0.25D : 1.0D)
-                || this.mob.getRandom().nextFloat() < 0.05F)) {
+                || this.mob.getRandom().nextFloat() < (isPlayerTarget ? 0.12F : 0.08F))) {
             this.pathedTargetX = target.getX();
             this.pathedTargetY = target.getY();
             this.pathedTargetZ = target.getZ();
@@ -215,13 +225,17 @@ public class EmeraldMeleeAttackGoal extends Goal {
                 this.ticksUntilNextPathRecalculation += 5;
             }
 
-            boolean movedWithOffset = !isPlayerTarget
-                    && this.shouldMoveToTargetWithOffset(target, distanceSqr, attackReachSqr)
+            boolean movedWithOffset = this.shouldMoveToTargetWithOffset(target, distanceSqr, attackReachSqr)
                     && this.moveToTargetWithOffset(target, distanceSqr, attackReachSqr, chaseSpeed);
-            if (!movedWithOffset && !this.mob.getNavigation().moveTo(target, chaseSpeed)) {
-                this.ticksUntilNextPathRecalculation += isPlayerTarget ? 2 : 15;
+            if (!movedWithOffset) {
+                double approachSpeed = chaseSpeed * (0.9D + this.mob.getRandom().nextDouble() * 0.25D);
+                if (CombatTactics.shouldPreserveHeightInGuard(this.mob, target)) {
+                    this.mob.getNavigation().moveTo(target.getX(), CombatTactics.getRangedNavigationY(this.mob, target),
+                            target.getZ(), approachSpeed);
+                } else if (!this.mob.getNavigation().moveTo(target, approachSpeed)) {
+                    this.ticksUntilNextPathRecalculation += isPlayerTarget ? 2 : 15;
+                }
             }
-
             this.ticksUntilNextPathRecalculation = this.adjustedTickDelay(this.ticksUntilNextPathRecalculation);
         } else if (closeEnoughToCreeper) {
             // Ya estamos lo suficientemente cerca del creeper, dejar de acercarse
@@ -230,9 +244,23 @@ public class EmeraldMeleeAttackGoal extends Goal {
 
         this.ticksUntilNextAttack = Math.max(this.ticksUntilNextAttack - 1, 0);
 
-        // Si por el offset quedamos apenas fuera del alcance, no esperar al próximo recálculo
         if (!closeEnoughToCreeper && !this.isWithinAttackRange(target, attackReachSqr) && this.mob.getNavigation().isDone()) {
-            this.mob.getNavigation().moveTo(target, chaseSpeed);
+            CombatTactics.moveToTargetPreservingHeight(this.mob, target, chaseSpeed);
+        }
+
+        if (this.shieldDropWindupTicks > 0) {
+            this.mob.getMoveControl().strafe(0.0F, 0.0F);
+        } else if (this.isWithinAttackRange(target, attackReachSqr) && this.ticksUntilNextAttack > 0) {
+            if (this.strafeTicks <= 0) {
+                this.strafeRight = this.mob.getRandom().nextBoolean();
+                this.strafeTicks = 8 + this.mob.getRandom().nextInt(12);
+            }
+            this.strafeTicks--;
+            float sideways = this.strafeRight ? 0.35F : -0.35F;
+            this.mob.getMoveControl().strafe(sideways, 0.0F);
+        } else {
+            this.strafeTicks = 0;
+            this.mob.getMoveControl().strafe(0.0F, 0.0F);
         }
 
         this.checkAndPerformAttack(target, distanceSqr);
@@ -253,26 +281,31 @@ public class EmeraldMeleeAttackGoal extends Goal {
     }
 
     private boolean shouldMoveToTargetWithOffset(LivingEntity target, double distanceSqr, double attackReachSqr) {
-        if (distanceSqr > 36.0D) {
+        if (distanceSqr > 400.0D) {
             return false;
         }
         if (distanceSqr <= attackReachSqr + 1.0D) {
             return false;
         }
 
-        return !this.mob.level().getEntitiesOfClass(
+        boolean alliesNearby = !this.mob.level().getEntitiesOfClass(
                 EmeraldMercenaryEntity.class,
                 this.mob.getBoundingBox().inflate(3.0D),
                 m -> m != this.mob && m.isAlive() && m.getTarget() == target
         ).isEmpty();
+        if (alliesNearby) {
+            return true;
+        }
+        return distanceSqr < 144.0D && this.mob.getRandom().nextFloat() < 0.45F;
     }
 
     private boolean moveToTargetWithOffset(LivingEntity target, double distanceSqr, double attackReachSqr, double speed) {
-        if (distanceSqr > 36.0D) {
+        if (distanceSqr > 400.0D) {
             return false;
         }
 
-        double radius = 1.2D + (double) (this.mob.getId() % 3) * 0.2D;
+        this.flankAngleSeed += 40 + this.mob.getRandom().nextInt(80);
+        double radius = 1.0D + this.mob.getRandom().nextDouble() * 1.2D;
         double dy = target.getY() - this.mob.getY();
         double maxHorizontalSqr = Math.max(attackReachSqr - dy * dy, 0.0D);
         double maxRadius = Math.sqrt(maxHorizontalSqr) * 0.9D;
@@ -280,11 +313,14 @@ public class EmeraldMeleeAttackGoal extends Goal {
             return false;
         }
         radius = Math.min(radius, maxRadius);
-        double angle = (double) (this.mob.getId() * 31) * 0.017453292519943295D;
+        double angle = (double) this.flankAngleSeed * 0.017453292519943295D;
         double x = target.getX() + Math.cos(angle) * radius;
         double z = target.getZ() + Math.sin(angle) * radius;
+        double y = CombatTactics.shouldPreserveHeightInGuard(this.mob, target)
+                ? CombatTactics.getRangedNavigationY(this.mob, target)
+                : target.getY();
 
-        return this.mob.getNavigation().moveTo(x, target.getY(), z, speed);
+        return this.mob.getNavigation().moveTo(x, y, z, speed);
     }
 
     private double getChaseSpeed(LivingEntity target) {
@@ -298,19 +334,35 @@ public class EmeraldMeleeAttackGoal extends Goal {
     protected void checkAndPerformAttack(LivingEntity target, double distanceSqr) {
         double attackReachSqr = this.getAttackReachSqr(target);
 
-        // No atacar si está usando el escudo (comportamiento vanilla: una acción a la vez)
+        if (this.shieldDropWindupTicks > 0) {
+            this.shieldDropWindupTicks--;
+            return;
+        }
+
         if (this.mob.isUsingItem()) {
+            if (!this.isWithinAttackRange(target, attackReachSqr) || this.ticksUntilNextAttack > 0) {
+                return;
+            }
+            if (this.mob.getRandom().nextFloat() < 0.65F) {
+                this.beginMeleeStrike();
+            }
             return;
         }
 
         if (this.isWithinAttackRange(target, attackReachSqr) && this.ticksUntilNextAttack <= 0) {
             this.resetAttackCooldown();
-            // Always trigger swing animation before attacking
             this.mob.swing(InteractionHand.MAIN_HAND);
             if (this.mob.level() instanceof ServerLevel serverLevel) {
                 this.mob.doHurtTarget(serverLevel, target);
             }
+            this.mob.suppressReactiveShieldForMelee(10);
         }
+    }
+
+    private void beginMeleeStrike() {
+        this.mob.stopUsingItem();
+        this.shieldDropWindupTicks = 3 + this.mob.getRandom().nextInt(3);
+        this.mob.suppressReactiveShieldForMelee(this.shieldDropWindupTicks + 12);
     }
 
     protected void resetAttackCooldown() {

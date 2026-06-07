@@ -63,7 +63,20 @@ public class GuardPositionGoal extends Goal {
     public void start() {
         BlockPos guard = this.mercenary.getGuardPos();
         if (guard != null) {
-            this.mercenary.getNavigation().moveTo(guard.getX() + 0.5, guard.getY(), guard.getZ() + 0.5, this.speedModifier);
+            double returnY = CombatTactics.getGuardReturnY(this.mercenary, guard);
+            this.mercenary.getNavigation().moveTo(guard.getX() + 0.5, returnY, guard.getZ() + 0.5, this.speedModifier);
+        }
+    }
+
+    @Override
+    public void tick() {
+        BlockPos guard = this.mercenary.getGuardPos();
+        if (guard == null) {
+            return;
+        }
+        double returnY = CombatTactics.getGuardReturnY(this.mercenary, guard);
+        if (this.mercenary.getNavigation().isDone()) {
+            this.mercenary.getNavigation().moveTo(guard.getX() + 0.5, returnY, guard.getZ() + 0.5, this.speedModifier);
         }
     }
 

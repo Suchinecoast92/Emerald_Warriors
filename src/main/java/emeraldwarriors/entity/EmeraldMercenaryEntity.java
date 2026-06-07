@@ -227,6 +227,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     // Ticks restantes durante los que intentará mantener el escudo arriba
     private int reactiveShieldTicks;
+    private int suppressReactiveShieldTicks;
 
     private DamageSource lastReactiveDamageSource;
 
@@ -618,6 +619,11 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     public boolean isInDisciplineAggro() {
         return this.disciplineExOwnerAggroTicks > 0 && this.disciplineExOwnerUuid != null;
+    }
+
+    /** Prevents reactive shield from re-raising while melee goal is attacking. */
+    public void suppressReactiveShieldForMelee(int ticks) {
+        this.suppressReactiveShieldTicks = Math.max(this.suppressReactiveShieldTicks, ticks);
     }
 
     public boolean isOutOfCombatForHeal() {
@@ -3097,17 +3103,28 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             DamageSource lastDamage = this.getLastDamageSource();
             if (lastDamage != null && lastDamage != this.lastReactiveDamageSource) {
                 if (this.shouldRaiseShieldFromDamage(lastDamage)) {
-                    // Mantener el escudo arriba al menos ~1.5s tras recibir daño (reducido 40%)
-                    this.reactiveShieldTicks = 84;
+                    int duration = 50 + this.random.nextInt(35);
+                    LivingEntity combatTarget = this.getTarget();
+                    if (combatTarget != null && this.distanceToSqr(combatTarget) < 9.0D) {
+                        duration = 24 + this.random.nextInt(18);
+                    }
+                    this.reactiveShieldTicks = Math.max(this.reactiveShieldTicks, duration);
                 }
                 this.lastReactiveDamageSource = lastDamage;
             }
 
+            if (this.suppressReactiveShieldTicks > 0) {
+                this.suppressReactiveShieldTicks--;
+            }
+
             // Uso reactivo del escudo tras recibir daño
             if (this.reactiveShieldTicks > 0) {
-                this.reactiveShieldTicks--;
+                LivingEntity combatTarget = this.getTarget();
+                boolean inMelee = combatTarget != null && combatTarget.isAlive()
+                        && this.distanceToSqr(combatTarget) < 9.0D;
+                this.reactiveShieldTicks -= inMelee ? 2 : 1;
 
-                if (!this.isUsingItem()) {
+                if (!this.isUsingItem() && this.suppressReactiveShieldTicks <= 0) {
                     ItemStack offhand = this.getOffhandItem();
                     ItemStack main = this.getMainHandItem();
 
@@ -3439,20 +3456,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                 living.knockback(0.5D, this.getX() - living.getX(), this.getZ() - living.getZ());
             }
             
-            // SENTINEL critical hits - 15% chance for extra damage
-            if (this.getRank() == MercenaryRank.SENTINEL && target instanceof LivingEntity living && this.random.nextFloat() < 0.15f) {
-                // Deal additional 3-5 damage for critical hit (simulates 50% bonus)
-                float criticalBonus = 3.0f + this.random.nextFloat() * 2.0f;
-                living.hurtServer(level, this.damageSources().mobAttack(this), criticalBonus);
-                
-                // Critical hit effects
-                level.playSound(null, this.getX(), this.getY(), this.getZ(),
-                        SoundEvents.PLAYER_ATTACK_CRIT, SoundSource.HOSTILE, 1.0f, 1.0f);
-                
-                // Critical particles at target location
-                level.sendParticles(ParticleTypes.CRIT,
-                        target.getX(), target.getY(0.5), target.getZ(),
-                        8, 0.4, 0.4, 0.4, 0.1);
+            if (target instanceof LivingEntity living) {
+                this.tryMeleeCriticalHit(level, living);
             }
             
             // Raid damage bonuses for specific ranks and targets
@@ -3476,6 +3481,43 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         }
 
         return result;
+    }
+
+    private void tryMeleeCriticalHit(ServerLevel level, LivingEntity target) {
+        float chance;
+        float minBonus;
+        float maxBonus;
+        int particles;
+
+        switch (this.getRank()) {
+            case SENTINEL -> {
+                chance = 0.15F;
+                minBonus = 3.0F;
+                maxBonus = 5.0F;
+                particles = 8;
+            }
+            case ANCIENT_GUARD -> {
+                chance = 0.25F;
+                minBonus = 4.0F;
+                maxBonus = 7.0F;
+                particles = 12;
+            }
+            default -> {
+                return;
+            }
+        }
+
+        if (this.random.nextFloat() >= chance) {
+            return;
+        }
+
+        float criticalBonus = minBonus + this.random.nextFloat() * (maxBonus - minBonus);
+        target.hurtServer(level, this.damageSources().mobAttack(this), criticalBonus);
+        level.playSound(null, this.getX(), this.getY(), this.getZ(),
+                SoundEvents.PLAYER_ATTACK_CRIT, SoundSource.HOSTILE, 1.0F, 1.0F);
+        level.sendParticles(ParticleTypes.CRIT,
+                target.getX(), target.getY(0.5), target.getZ(),
+                particles, 0.4, 0.4, 0.4, 0.1);
     }
 
     private static int getExpForKill(LivingEntity target) {
@@ -3717,14 +3759,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         // Notificar al dueño
         LivingEntity owner = this.getOwner();
         if (owner instanceof Player player) {
-            String rankName = switch (newRank) {
-                case RECRUIT -> "Recluta";
-                case SOLDIER -> "Soldado";
-                case SENTINEL -> "Centinela";
-                case VETERAN -> "Veterano";
-                case ANCIENT_GUARD -> "Guardia Ancestral";
-            };
-            // Mensaje de ascenso eliminado de action bar
+            player.displayClientMessage(
+                    net.minecraft.network.chat.Component.literal(
+                            "§6★ " + this.getMercenaryName() + " subió a " + newRank.getDisplayName() + "!"),
+                    true);
         }
     }
 
@@ -4180,14 +4218,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         serverPlayer.openMenu(new MenuProvider() {
             @Override
             public Component getDisplayName() {
-                String rankName = switch (EmeraldMercenaryEntity.this.getRank()) {
-                    case RECRUIT -> "Recluta";
-                    case SOLDIER -> "Soldado";
-                    case SENTINEL -> "Centinela";
-                    case VETERAN -> "Veterano";
-                    case ANCIENT_GUARD -> "Guardián antiguo";
-                };
-                return Component.literal(EmeraldMercenaryEntity.this.getMercenaryName() + " : " + rankName);
+                return Component.literal(EmeraldMercenaryEntity.this.getMercenaryName() + " : "
+                        + EmeraldMercenaryEntity.this.getRank().getDisplayName());
             }
 
             @Override

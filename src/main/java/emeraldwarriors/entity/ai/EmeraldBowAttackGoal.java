@@ -149,18 +149,21 @@ public class EmeraldBowAttackGoal extends Goal {
             --this.seeTime;
         }
 
-        // Movimiento y posicionamiento
-        if (!canSee) {
-            // Fuera de rango o sin visión: acercarse al objetivo normalmente
-            this.mob.getNavigation().moveTo(target, this.getChaseSpeed(target));
+        boolean holdHighGround = CombatTactics.canHoldGroundAndShoot(this.mob, target, distSqr, this.attackRadiusSqr);
+
+        if (holdHighGround) {
+            this.mob.getNavigation().stop();
             this.strafeTime = 0;
-            // Cuando está corriendo para reposicionarse, no queremos strafe lateral
+            this.mob.getMoveControl().strafe(0.0F, 0.0F);
+        } else if (!canSee) {
+            CombatTactics.moveToTargetPreservingHeight(this.mob, target, this.getChaseSpeed(target));
+            this.strafeTime = 0;
             this.mob.getMoveControl().strafe(0.0F, 0.0F);
         } else if (repositioningThisTick) {
             this.strafeTime = 0;
             this.mob.getMoveControl().strafe(0.0F, 0.0F);
         } else if (distSqr > (double) this.attackRadiusSqr) {
-            this.mob.getNavigation().moveTo(target, this.getChaseSpeed(target));
+            CombatTactics.moveToTargetPreservingHeight(this.mob, target, this.getChaseSpeed(target));
             this.strafeTime = 0;
             this.mob.getMoveControl().strafe(0.0F, 0.0F);
         } else {
@@ -259,9 +262,10 @@ public class EmeraldBowAttackGoal extends Goal {
     }
     
     private boolean shouldMaintainHeightAdvantage(LivingEntity target) {
-        // Only SENTINEL and above ranks use tactical height advantage
-        var rank = this.mob.getRank();
-        return rank.ordinal() >= 2; // SENTINEL=2, VETERAN=3, ANCIENT_GUARD=4
+        if (CombatTactics.isGuardOrder(this.mob)) {
+            return CombatTactics.shouldPreserveHeightInGuard(this.mob, target);
+        }
+        return this.mob.getRank().ordinal() >= 2 && CombatTactics.hasHeightAdvantage(this.mob, target, 2.0);
     }
 
     private boolean tryRepositionAroundTarget(LivingEntity target, double distSqr) {
@@ -272,8 +276,14 @@ public class EmeraldBowAttackGoal extends Goal {
             return false;
         }
 
+        if (CombatTactics.shouldPreserveHeightInGuard(this.mob, target)
+                && this.mob.getSensing().hasLineOfSight(target)
+                && distSqr <= (double) this.attackRadiusSqr) {
+            return false;
+        }
+
         boolean hasHeightAdvantage = this.shouldMaintainHeightAdvantage(target)
-                && (this.mob.getY() - target.getY()) >= 2.0D;
+                && CombatTactics.hasHeightAdvantage(this.mob, target, 2.0);
 
         double preferredRadius = 10.5D + (double) (this.mob.getId() % 5) * 0.5D;
         double minRadius = preferredRadius - 1.25D;
@@ -299,7 +309,8 @@ public class EmeraldBowAttackGoal extends Goal {
         double x = target.getX() + Math.cos(angleRad) * preferredRadius;
         double z = target.getZ() + Math.sin(angleRad) * preferredRadius;
 
-        boolean moved = this.mob.getNavigation().moveTo(x, target.getY(), z, this.getChaseSpeed(target));
+        double y = CombatTactics.getRangedNavigationY(this.mob, target);
+        boolean moved = this.mob.getNavigation().moveTo(x, y, z, this.getChaseSpeed(target));
         if (moved) {
             this.repositionCooldown = 10 + this.mob.getRandom().nextInt(10);
         }

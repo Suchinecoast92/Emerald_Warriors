@@ -50,10 +50,6 @@ public class MercenaryScreen extends AbstractContainerScreen<MercenaryMenu> {
     private static final Identifier XP_BG           = Identifier.withDefaultNamespace("hud/experience_bar_background");
     private static final Identifier XP_PROGRESS     = Identifier.withDefaultNamespace("hud/experience_bar_progress");
 
-    private static final String[] RANK_NAMES = new String[] {
-            "Recluta", "Soldado", "Centinela", "Veterano", "Guardián antiguo"
-    };
-
     private Button terminateButton;
     private Button playerTargetsButton;
     private int pendingCloseTicks = -1;
