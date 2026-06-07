@@ -36,6 +36,10 @@ import net.minecraft.world.item.CrossbowItem;
  *  Zona inventario jugador: y=117 (3 filas) + y=175 (hotbar)
  */
 public class MercenaryMenu extends AbstractContainerMenu {
+    public static final int BUTTON_TERMINATE_CONTRACT = 0;
+    public static final int BUTTON_TOGGLE_PLAYER_TARGETS = 1;
+    private static final int DATA_ALLOW_PLAYER_TARGETS = 8;
+    private static final int DATA_ORDER_ORDINAL = 9;
 
     private final MercenaryInventory mercenaryInventory;
     private final ContainerData data;
@@ -51,9 +55,9 @@ public class MercenaryMenu extends AbstractContainerMenu {
     private static final int PLAYER_HOTBAR_Y = 175;
 
     public MercenaryMenu(int syncId, Inventory playerInventory, MercenaryInventory mercenaryInventory) {
-        // 6 ints sincronizados: vida actual, vida máxima, exp actual, exp máxima,
-        // ordinal de rango y entityId del mercenario.
-        this(syncId, playerInventory, mercenaryInventory, new SimpleContainerData(6));
+        // 10 ints sincronizados: vida actual, vida máxima, exp actual, exp máxima,
+        // ordinal de rango, entityId del mercenario, estado de terminación, PvP y orden.
+        this(syncId, playerInventory, mercenaryInventory, new SimpleContainerData(10));
     }
 
     public MercenaryMenu(int syncId, Inventory playerInventory, MercenaryInventory mercenaryInventory, ContainerData data) {
@@ -168,6 +172,35 @@ public class MercenaryMenu extends AbstractContainerMenu {
 
     public int getMercEntityId() {
         return this.data.get(5);
+    }
+
+    public boolean isTerminateConfirmPending() {
+        return this.data.get(6) != 0;
+    }
+
+    public int getTerminateConfirmTicksRemaining() {
+        return Math.max(0, this.data.get(7));
+    }
+
+    public boolean allowPlayerTargets() {
+        return this.data.get(DATA_ALLOW_PLAYER_TARGETS) != 0;
+    }
+
+    public int getOrderOrdinal() {
+        return this.data.get(DATA_ORDER_ORDINAL);
+    }
+
+    @Override
+    public boolean clickMenuButton(Player player, int id) {
+        if (this.mercenaryInventory.getOwnerEntity() == null) {
+            return false;
+        }
+
+        return switch (id) {
+            case BUTTON_TERMINATE_CONTRACT -> this.mercenaryInventory.getOwnerEntity().handleTerminateContractButton(player);
+            case BUTTON_TOGGLE_PLAYER_TARGETS -> this.mercenaryInventory.getOwnerEntity().handleTogglePlayerTargetsButton(player);
+            default -> false;
+        };
     }
 
     private static Slot iconSlot(Container container, int slotIndex, int x, int y, String spritePath) {

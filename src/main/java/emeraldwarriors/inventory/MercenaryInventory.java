@@ -45,6 +45,10 @@ public class MercenaryInventory extends SimpleContainer {
         this.owner = owner;
     }
 
+    public EmeraldMercenaryEntity getOwnerEntity() {
+        return this.owner;
+    }
+
     /**
      * Updates the container slot directly (via SimpleContainer) WITHOUT
      * propagating the change back to the entity's equipment slots.

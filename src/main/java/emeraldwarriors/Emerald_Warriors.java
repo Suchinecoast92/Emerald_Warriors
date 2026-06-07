@@ -11,16 +11,11 @@ import emeraldwarriors.worldgen.ModWorldgen;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
-import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.animal.golem.IronGolem;
 import net.minecraft.world.entity.npc.villager.AbstractVillager;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.Projectile;
-import net.minecraft.world.item.BowItem;
-import net.minecraft.world.item.CrossbowItem;
-import net.minecraft.world.item.Item;
-import net.minecraft.world.item.ItemStack;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,25 +58,8 @@ public class Emerald_Warriors implements ModInitializer {
 			if (entity instanceof EmeraldMercenaryEntity merc && responsiblePlayer != null) {
 				var owner = merc.getOwnerUuid();
 				if (owner != null && owner.equals(responsiblePlayer.getUUID())) {
-					boolean usedWeapon = isWeaponForDiscipline(responsiblePlayer.getMainHandItem());
-					merc.onOwnerMeleeHit(responsiblePlayer, usedWeapon);
+					merc.onOwnerMeleeHit(responsiblePlayer);
 					return true;
-				}
-			}
-			if (entity instanceof AbstractVillager villager && responsiblePlayer != null) {
-				boolean usedWeapon = isWeaponForDiscipline(responsiblePlayer.getMainHandItem());
-				for (EmeraldMercenaryEntity merc : villager.level().getEntitiesOfClass(EmeraldMercenaryEntity.class,
-							villager.getBoundingBox().inflate(20.0D))) {
-					var owner = merc.getOwnerUuid();
-					if (owner != null && owner.equals(responsiblePlayer.getUUID())) {
-						if (!merc.isNeutralOrder() || merc.hasLineOfSight(villager)) {
-							merc.onOwnerMeleeHit(responsiblePlayer, usedWeapon);
-						}
-					} else if (owner == null) {
-						if (merc.hasLineOfSight(villager) || merc.distanceToSqr(villager) <= 64.0D) {
-							merc.onWildVillagerOffenseByPlayer(responsiblePlayer);
-						}
-					}
 				}
 			}
 			// Block IronGolem → mercenary damage (prevents accidental-hit retaliation)
@@ -92,7 +70,7 @@ public class Emerald_Warriors implements ModInitializer {
 			if (attacker instanceof EmeraldMercenaryEntity) {
 				if (entity instanceof Player p) {
 					var owner = ((EmeraldMercenaryEntity) attacker).getOwnerUuid();
-					if (owner != null && owner.equals(p.getUUID()) && !((EmeraldMercenaryEntity) attacker).isDisciplineSlapDamageAllowed()) {
+					if (owner != null && owner.equals(p.getUUID())) {
 						return false;
 					}
 				}
@@ -114,7 +92,7 @@ public class Emerald_Warriors implements ModInitializer {
 				if (ownerEntity instanceof EmeraldMercenaryEntity) {
 					if (entity instanceof Player p) {
 						var owner = ((EmeraldMercenaryEntity) ownerEntity).getOwnerUuid();
-						if (owner != null && owner.equals(p.getUUID()) && !((EmeraldMercenaryEntity) ownerEntity).isDisciplineSlapDamageAllowed()) {
+						if (owner != null && owner.equals(p.getUUID())) {
 							return false;
 						}
 					}
@@ -133,6 +111,33 @@ public class Emerald_Warriors implements ModInitializer {
 			return true;
 		});
 
+		ServerLivingEntityEvents.AFTER_DEATH.register((entity, source) -> {
+			if (!(entity instanceof Player deadPlayer) || !(entity.level() instanceof net.minecraft.server.level.ServerLevel sl)) {
+				return;
+			}
+
+			LivingEntity killer = null;
+			if (source.getEntity() instanceof LivingEntity living) {
+				killer = living;
+			} else if (source.getDirectEntity() instanceof Projectile proj && proj.getOwner() instanceof LivingEntity living) {
+				killer = living;
+			}
+
+			if (!(killer instanceof EmeraldMercenaryEntity killerMerc)) {
+				return;
+			}
+			if (!killerMerc.isHostileToPlayerUuid(deadPlayer.getUUID())) {
+				return;
+			}
+
+			for (EmeraldMercenaryEntity merc : sl.getEntitiesOfClass(
+					EmeraldMercenaryEntity.class,
+					deadPlayer.getBoundingBox().inflate(64.0D),
+					m -> m.isHostileToPlayerUuid(deadPlayer.getUUID()))) {
+				merc.clearTrackedHostilePlayer(deadPlayer.getUUID());
+			}
+		});
+
 		// Register commands
 		CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
 			MercenaryCommand.register(dispatcher);
@@ -141,20 +146,4 @@ public class Emerald_Warriors implements ModInitializer {
 		LOGGER.info("Emerald Warriors: mercenary system initialized (entities registered).");
 	}
 
-	private static boolean isWeaponForDiscipline(ItemStack stack) {
-		if (stack == null || stack.isEmpty()) {
-			return false;
-		}
-		Item item = stack.getItem();
-		if (item instanceof BowItem || item instanceof CrossbowItem) {
-			return true;
-		}
-		final double[] extraDamage = new double[1];
-		stack.forEachModifier(EquipmentSlot.MAINHAND, (attribute, modifier) -> {
-			if (attribute != null && attribute.equals(Attributes.ATTACK_DAMAGE)) {
-				extraDamage[0] += modifier.amount();
-			}
-		});
-		return (1.0D + extraDamage[0]) > 1.0D;
-	}
 }

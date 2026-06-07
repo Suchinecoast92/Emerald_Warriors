@@ -2,7 +2,9 @@ package emeraldwarriors.client.gui;
 
 import emeraldwarriors.entity.EmeraldMercenaryEntity;
 import emeraldwarriors.inventory.MercenaryMenu;
+import emeraldwarriors.mercenary.MercenaryOrder;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.renderer.RenderPipelines;
@@ -22,6 +24,10 @@ import net.minecraft.world.inventory.Slot;
  * Panel inferior: inventario del jugador + hotbar
  */
 public class MercenaryScreen extends AbstractContainerScreen<MercenaryMenu> {
+    private static final int TERMINATE_BUTTON_WIDTH = 90;
+    private static final int TERMINATE_BUTTON_HEIGHT = 20;
+    private static final int PLAYER_TOGGLE_SIZE = 12;
+
 
     // Colores vanilla (generic_54.png)
     private static final int PANEL_BG     = 0xFFC6C6C6;
@@ -48,6 +54,10 @@ public class MercenaryScreen extends AbstractContainerScreen<MercenaryMenu> {
             "Recluta", "Soldado", "Centinela", "Veterano", "Guardián antiguo"
     };
 
+    private Button terminateButton;
+    private Button playerTargetsButton;
+    private int pendingCloseTicks = -1;
+
     public MercenaryScreen(MercenaryMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
         this.imageWidth  = GUI_WIDTH;
@@ -61,6 +71,46 @@ public class MercenaryScreen extends AbstractContainerScreen<MercenaryMenu> {
         this.titleLabelY = 6;
         this.inventoryLabelX = 8;
         this.inventoryLabelY = EQUIP_HEIGHT + 2;
+
+        int buttonX = this.leftPos + (this.imageWidth - TERMINATE_BUTTON_WIDTH) / 2;
+        int buttonY = this.topPos + this.imageHeight + 8;
+        this.terminateButton = this.addRenderableWidget(Button.builder(Component.literal("Finalizar"), button -> {
+                    boolean wasConfirmPending = this.menu.isTerminateConfirmPending();
+                    if (this.minecraft != null && this.minecraft.gameMode != null) {
+                        this.minecraft.gameMode.handleInventoryButtonClick(this.menu.containerId, MercenaryMenu.BUTTON_TERMINATE_CONTRACT);
+                        if (wasConfirmPending) {
+                            this.pendingCloseTicks = 6;
+                        }
+                    }
+                })
+                .bounds(buttonX, buttonY, TERMINATE_BUTTON_WIDTH, TERMINATE_BUTTON_HEIGHT)
+                .tooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal("Finalizar contrato")))
+                .build());
+
+        int playerToggleX = this.leftPos + 62;
+        int playerToggleY = this.topPos + 56;
+        this.playerTargetsButton = this.addRenderableWidget(Button.builder(Component.empty(), button -> {
+                    if (this.minecraft != null && this.minecraft.gameMode != null) {
+                        this.minecraft.gameMode.handleInventoryButtonClick(this.menu.containerId, MercenaryMenu.BUTTON_TOGGLE_PLAYER_TARGETS);
+                    }
+                })
+                .bounds(playerToggleX, playerToggleY, PLAYER_TOGGLE_SIZE, PLAYER_TOGGLE_SIZE)
+                .tooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal("Permitir combate contra jugadores en Guardia/Patrulla")))
+                .build());
+        this.updateTerminateButton();
+        this.updatePlayerTargetsButton();
+    }
+
+    @Override
+    public void containerTick() {
+        super.containerTick();
+        if (this.pendingCloseTicks >= 0) {
+            this.pendingCloseTicks--;
+            if (this.pendingCloseTicks <= 0 && this.minecraft != null && this.minecraft.player != null) {
+                this.minecraft.player.closeContainer();
+                this.pendingCloseTicks = -1;
+            }
+        }
     }
 
     @Override
@@ -88,6 +138,8 @@ public class MercenaryScreen extends AbstractContainerScreen<MercenaryMenu> {
 
     @Override
     public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        this.updateTerminateButton();
+        this.updatePlayerTargetsButton();
         super.render(guiGraphics, mouseX, mouseY, partialTick);
         this.renderTooltip(guiGraphics, mouseX, mouseY);
     }
@@ -161,6 +213,60 @@ public class MercenaryScreen extends AbstractContainerScreen<MercenaryMenu> {
                 g.blitSprite(RenderPipelines.GUI_TEXTURED, XP_PROGRESS, infoX, xpY, filled, barHeight);
             }
         }
+
+        if (shouldShowPlayerTargetsToggle()) {
+            int pvpLabelX = infoX + 20;
+            int pvpLabelY = 57;
+            g.drawString(this.font, "Jugadores:", pvpLabelX, pvpLabelY, 0xFF404040, false);
+            boolean enabled = this.menu.allowPlayerTargets();
+            String state = enabled ? "ON" : "OFF";
+            int stateColor = enabled ? 0xFF2E7D32 : 0xFFAA2222;
+            g.drawString(this.font, state, pvpLabelX + 63, pvpLabelY, stateColor, false);
+        }
+
+    }
+
+    private boolean shouldShowPlayerTargetsToggle() {
+        int ordinal = this.menu.getOrderOrdinal();
+        if (ordinal < 0 || ordinal >= MercenaryOrder.values().length) {
+            return false;
+        }
+        MercenaryOrder order = MercenaryOrder.values()[ordinal];
+        return order == MercenaryOrder.GUARD || order == MercenaryOrder.PATROL;
+    }
+
+    private void updateTerminateButton() {
+        if (this.terminateButton == null) {
+            return;
+        }
+        boolean confirmPending = this.menu.isTerminateConfirmPending();
+        if (confirmPending) {
+            int secondsLeft = Math.max(1, (this.menu.getTerminateConfirmTicksRemaining() + 19) / 20);
+            this.terminateButton.setMessage(Component.literal("Confirmar (" + secondsLeft + "s)"));
+        } else {
+            this.terminateButton.setMessage(Component.literal("Finalizar"));
+        }
+        this.terminateButton.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal(
+                confirmPending ? "Confirmar finalizacion del contrato" : "Finalizar contrato"
+        )));
+        this.terminateButton.active = this.pendingCloseTicks < 0;
+    }
+
+    private void updatePlayerTargetsButton() {
+        if (this.playerTargetsButton == null) {
+            return;
+        }
+        boolean show = shouldShowPlayerTargetsToggle();
+        this.playerTargetsButton.visible = show;
+        this.playerTargetsButton.active = show && this.pendingCloseTicks < 0;
+        if (!show) {
+            return;
+        }
+        boolean enabled = this.menu.allowPlayerTargets();
+        this.playerTargetsButton.setMessage(Component.literal(enabled ? "x" : ""));
+        this.playerTargetsButton.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal(
+                enabled ? "Jugadores: ON" : "Jugadores: OFF"
+        )));
     }
 
     private void drawPanel(GuiGraphics g, int x, int y, int w, int h) {

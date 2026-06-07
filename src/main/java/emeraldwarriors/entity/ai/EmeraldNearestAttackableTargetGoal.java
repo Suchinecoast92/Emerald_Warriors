@@ -103,7 +103,7 @@ public class EmeraldNearestAttackableTargetGoal extends TargetGoal {
                 return false;
             }
 
-            return true;
+            return this.mercenary.canInitiatePvpAgainst(player);
         }
 
         return false;

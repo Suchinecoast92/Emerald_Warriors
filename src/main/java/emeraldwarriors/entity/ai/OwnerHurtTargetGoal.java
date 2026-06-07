@@ -63,6 +63,7 @@ public class OwnerHurtTargetGoal extends TargetGoal {
     @Override
     public void start() {
         this.mob.setTarget(this.ownerTarget);
+        this.mercenary.alertBrotherhood(this.ownerTarget);
         super.start();
     }
 }

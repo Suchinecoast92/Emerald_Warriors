@@ -4,6 +4,7 @@ import emeraldwarriors.entity.EmeraldMercenaryEntity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.ai.goal.target.TargetGoal;
+import net.minecraft.world.entity.player.Player;
 
 import java.util.EnumSet;
 
@@ -37,6 +38,13 @@ public class EmeraldProtectOwnerGoal extends TargetGoal {
             return false;
         }
 
+        if (attacker instanceof Player player) {
+            this.mercenary.onOwnerAttackedByPlayer(player, owner);
+            if (!this.mercenary.isPlayerMarkedHostile(player)) {
+                return false;
+            }
+        }
+
         // Don't target the owner itself
         if (attacker == this.mercenary) {
             return false;
@@ -63,6 +71,7 @@ public class EmeraldProtectOwnerGoal extends TargetGoal {
     @Override
     public void start() {
         this.mob.setTarget(this.ownerAttacker);
+        this.mercenary.alertBrotherhood(this.ownerAttacker);
         super.start();
     }
 }
