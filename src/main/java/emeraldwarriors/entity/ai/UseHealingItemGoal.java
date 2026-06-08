@@ -11,7 +11,6 @@ import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.ai.goal.Goal;
-import net.minecraft.world.food.FoodProperties;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -125,7 +124,7 @@ public class UseHealingItemGoal extends Goal {
             returnToBag(toReturn);
         }
 
-        if (didConsume && !this.consumedItem.isEmpty() && isSafeFood(this.consumedItem) && !isHealingItem(this.consumedItem)) {
+        if (didConsume && !this.consumedItem.isEmpty() && MercenaryFoodUtil.isSafeFood(this.consumedItem) && !isHealingItem(this.consumedItem)) {
             this.mercenary.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 200, 0, false, false));
         }
 
@@ -164,20 +163,8 @@ public class UseHealingItemGoal extends Goal {
         return -1;
     }
 
-    private static boolean isSafeFood(ItemStack stack) {
-        if (stack.isEmpty()) {
-            return false;
-        }
-        Item item = stack.getItem();
-        if (item == Items.ROTTEN_FLESH || item == Items.POISONOUS_POTATO) {
-            return false;
-        }
-        FoodProperties food = stack.get(DataComponents.FOOD);
-        return food != null;
-    }
-
     private static boolean isOutOfCombatHealingItem(ItemStack stack) {
-        return isHealingItem(stack) || isSafeFood(stack);
+        return isHealingItem(stack) || MercenaryFoodUtil.isSafeFood(stack);
     }
 
     private static boolean isHealingEffect(MobEffectInstance eff) {

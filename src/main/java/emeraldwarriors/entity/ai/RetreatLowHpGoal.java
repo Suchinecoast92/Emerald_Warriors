@@ -4,7 +4,6 @@ import emeraldwarriors.entity.EmeraldMercenaryEntity;
 import emeraldwarriors.inventory.MercenaryInventory;
 import emeraldwarriors.mercenary.MercenaryOrder;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.component.DataComponents;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.effect.MobEffectInstance;
@@ -94,7 +93,7 @@ public class RetreatLowHpGoal extends Goal {
                     if (currentMain.is(Items.GLASS_BOTTLE) || currentMain.is(Items.BOWL)) {
                         toReturn = currentMain.copy();
                         didConsume = true;
-                    } else if (UseHealingItemGoal.isHealingItem(currentMain) || isSafeFood(currentMain)) {
+                    } else if (UseHealingItemGoal.isHealingItem(currentMain) || MercenaryFoodUtil.isSafeFood(currentMain)) {
                         toReturn = currentMain.copy();
                     }
                 } else {
@@ -107,7 +106,7 @@ public class RetreatLowHpGoal extends Goal {
                     returnToBag(toReturn);
                 }
 
-                if (didConsume && !this.consumedItem.isEmpty() && isSafeFood(this.consumedItem) && !UseHealingItemGoal.isHealingItem(this.consumedItem)) {
+                if (didConsume && !this.consumedItem.isEmpty() && MercenaryFoodUtil.isSafeFood(this.consumedItem) && !UseHealingItemGoal.isHealingItem(this.consumedItem)) {
                     this.mercenary.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 200, 0, false, false));
                 }
 
@@ -144,7 +143,7 @@ public class RetreatLowHpGoal extends Goal {
             }
             MercenaryInventory inv = this.mercenary.getMercenaryInventory();
             ItemStack currentMain = inv.getItem(MercenaryInventory.SLOT_MAIN_HAND);
-            if (!currentMain.isEmpty() && (UseHealingItemGoal.isHealingItem(currentMain) || isSafeFood(currentMain)
+            if (!currentMain.isEmpty() && (UseHealingItemGoal.isHealingItem(currentMain) || MercenaryFoodUtil.isSafeFood(currentMain)
                     || currentMain.is(Items.GLASS_BOTTLE) || currentMain.is(Items.BOWL))) {
                 returnToBag(currentMain.copy());
             }
@@ -209,7 +208,7 @@ public class RetreatLowHpGoal extends Goal {
         boolean allowFood = this.mercenary.getCurrentOrder() == MercenaryOrder.NEUTRAL;
         for (int i = MercenaryInventory.SLOT_BAG_START; i < MercenaryInventory.SIZE; i++) {
             ItemStack stack = inv.getItem(i);
-            if (!stack.isEmpty() && (UseHealingItemGoal.isHealingItem(stack) || (allowFood && isSafeFood(stack)))) {
+            if (!stack.isEmpty() && (UseHealingItemGoal.isHealingItem(stack) || (allowFood && MercenaryFoodUtil.isSafeFood(stack)))) {
                 return i;
             }
         }
@@ -228,16 +227,6 @@ public class RetreatLowHpGoal extends Goal {
                 return;
             }
         }
-    }
-
-    private static boolean isSafeFood(ItemStack stack) {
-        if (stack.isEmpty()) {
-            return false;
-        }
-        if (stack.is(Items.ROTTEN_FLESH) || stack.is(Items.POISONOUS_POTATO)) {
-            return false;
-        }
-        return stack.get(DataComponents.FOOD) != null;
     }
 
     private void moveToSafePoint() {
