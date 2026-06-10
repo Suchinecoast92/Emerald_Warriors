@@ -2,5 +2,8 @@
   "model": {
     "type": "minecraft:model",
     "model": "emerald_warriors:item/emerald_mercenary_spawn_egg"
+  },
+  "minecraft:item_name": {
+    "translate": "item.emerald_warriors.emerald_mercenary_spawn_egg"
   }
 }

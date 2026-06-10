@@ -3,6 +3,7 @@ package emeraldwarriors.entity.ai;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.FenceGateBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -11,7 +12,8 @@ import java.util.EnumSet;
 
 public class OpenFenceGateGoal extends Goal {
 
-    private static final int SEARCH_RADIUS = 2;
+    private static final int SEARCH_RADIUS = 5;
+    private static final int PATH_LOOKAHEAD = 6;
     private static final int MAX_OPEN_TICKS = 80;
 
     private final PathfinderMob mob;
@@ -21,9 +23,7 @@ public class OpenFenceGateGoal extends Goal {
 
     public OpenFenceGateGoal(PathfinderMob mob) {
         this.mob = mob;
-        EnumSet<Flag> flags = EnumSet.noneOf(Flag.class);
-        flags.add(Flag.MOVE);
-        this.setFlags(flags);
+        this.setFlags(EnumSet.noneOf(Flag.class));
     }
 
     @Override
@@ -35,7 +35,10 @@ public class OpenFenceGateGoal extends Goal {
             return false;
         }
 
-        BlockPos found = this.findNearbyClosedGate();
+        BlockPos found = this.findGateOnPath();
+        if (found == null) {
+            found = this.findClosedGateNear(this.mob.blockPosition(), SEARCH_RADIUS);
+        }
         if (found == null) {
             return false;
         }
@@ -102,19 +105,33 @@ public class OpenFenceGateGoal extends Goal {
         this.openTicks = 0;
     }
 
-    private BlockPos findNearbyClosedGate() {
-        BlockPos origin = this.mob.blockPosition();
+    private BlockPos findGateOnPath() {
+        Path path = this.mob.getNavigation().getPath();
+        if (path == null || path.isDone()) {
+            return null;
+        }
+
+        Level level = this.mob.level();
+        int start = path.getNextNodeIndex();
+        int end = Math.min(start + PATH_LOOKAHEAD, path.getNodeCount());
+        for (int i = start; i < end; i++) {
+            BlockPos gate = this.findClosedGateNear(path.getNodePos(i), 1);
+            if (gate != null) {
+                return gate;
+            }
+        }
+        return null;
+    }
+
+    private BlockPos findClosedGateNear(BlockPos origin, int radius) {
         Level level = this.mob.level();
 
         for (int dy = -1; dy <= 1; dy++) {
-            for (int dx = -SEARCH_RADIUS; dx <= SEARCH_RADIUS; dx++) {
-                for (int dz = -SEARCH_RADIUS; dz <= SEARCH_RADIUS; dz++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
                     BlockPos pos = origin.offset(dx, dy, dz);
-                    BlockState st = level.getBlockState(pos);
-                    if (!(st.getBlock() instanceof FenceGateBlock)) {
-                        continue;
-                    }
-                    if (!st.getValue(FenceGateBlock.OPEN)) {
+                    BlockState state = level.getBlockState(pos);
+                    if (state.getBlock() instanceof FenceGateBlock && !state.getValue(FenceGateBlock.OPEN)) {
                         return pos;
                     }
                 }

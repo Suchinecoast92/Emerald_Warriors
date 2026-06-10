@@ -115,6 +115,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private static final int OWNER_DISCIPLINE_WINDOW_TICKS = 600;
     private static final int MAX_STORED_CONTRACT_DAYS = 12;
     private static final int CONTRACT_ADMIRE_TICKS = 60;
+    private static final boolean MERCENARY_DIALOGUE_ENABLED = false;
     private static final int CONTRACT_EXPIRE_APPROACH_TICKS = 80;
     private static final int CONTRACT_EXPIRE_RETREAT_DELAY_TICKS = 20;
     private static final double CONTRACT_EXPIRE_RETREAT_SPEED = 0.65D;
@@ -941,7 +942,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             output.putString("MercenaryName", this.mercenaryName);
         }
 
-        if (this.contractTicksRemaining > 0) {
+        if (this.ownerUuid != null) {
             output.putInt("ContractTicks", this.contractTicksRemaining);
         }
 
@@ -1564,6 +1565,13 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     public int getContractTicksRemaining() {
         return this.contractTicksRemaining;
+    }
+
+    public int getContractDaysRemaining() {
+        if (this.contractTicksRemaining <= 0) {
+            return 0;
+        }
+        return (this.contractTicksRemaining + TICKS_PER_DAY - 1) / TICKS_PER_DAY;
     }
 
     public Player getContractOwnerPlayer() {
@@ -3758,7 +3766,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                 return;
             }
 
-            this.sendMercenaryMessage(p, this.randomContractEndMessage());
+            this.sendContractInfo(p, "Contrato por concluir.");
             this.contractExpireNotified = true;
             this.contractExpireRetreatDelayTicks = CONTRACT_EXPIRE_RETREAT_DELAY_TICKS;
             this.contractExpireNotifyTicks = 0;
@@ -3975,10 +3983,12 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                     this.getX(), this.getY(0.5), this.getZ(),
                     8, 0.4, 0.5, 0.4, 0.0);
             if (p != null) {
-                String accept = (usedBundle && this.random.nextFloat() < BUNDLE_EASTER_EGG_CHANCE)
-                        ? this.randomBundleEasterEggAcceptance()
-                        : this.randomAcceptance();
-                this.sendMercenaryMessage(p, accept);
+                this.sendContractInfo(p,
+                        "Contrato activo. "
+                                + pendingDays
+                                + " día"
+                                + (pendingDays == 1 ? "" : "s")
+                                + ".");
             }
         } else if (action == PendingContractAction.RENEW_CONTRACT && renewDays > 0) {
             this.addContractDays(renewDays);
@@ -3988,11 +3998,17 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             if (this.ownerUuid != null) {
                 Player p = sl.getPlayerByUUID(this.ownerUuid);
                 if (p != null) {
-                    if (usedBundle && this.random.nextFloat() < BUNDLE_EASTER_EGG_CHANCE) {
-                        this.sendMercenaryMessage(p, this.randomBundleEasterEggAcceptance());
-                    } else {
-                        this.sendMercenaryMessage(p, this.randomAcceptance());
-                    }
+                    int totalDays = this.getContractDaysRemaining();
+                    this.sendContractInfo(p,
+                            "Contrato extendido. +"
+                                    + renewDays
+                                    + " día"
+                                    + (renewDays == 1 ? "" : "s")
+                                    + ". Total: "
+                                    + totalDays
+                                    + " día"
+                                    + (totalDays == 1 ? "" : "s")
+                                    + ".");
                     if (usedBundle) {
                         this.currentContractBundlePayerUuid = p.getUUID();
                         this.grantBundleDiscount(p);
@@ -4010,6 +4026,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     }
 
     public void sendMercenaryMessage(Player player, String body) {
+        if (!MERCENARY_DIALOGUE_ENABLED) {
+            return;
+        }
         if (player instanceof ServerPlayer serverPlayer) {
             String name = this.getMercenaryName();
             Component prefix = Component.literal("[" + name + "] ")
@@ -4050,6 +4069,13 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             // true = mostrar en la barra de acción (sobre la hotbar), no en el chat
             serverPlayer.displayClientMessage(message, true);
         }
+    }
+
+    private boolean canOwnerOpenInventory(Player player) {
+        return player != null
+                && this.ownerUuid != null
+                && this.isOwnerPlayer(player)
+                && !this.isContractAdmiring();
     }
 
     /**
@@ -4283,7 +4309,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
                 if (!this.level().isClientSide()) {
                     if (canManage) {
-                        if (player instanceof ServerPlayer serverPlayer) {
+                        if (player instanceof ServerPlayer serverPlayer && this.canOwnerOpenInventory(player)) {
                             this.openInventoryFor(serverPlayer);
                         }
                     } else {
@@ -4327,7 +4353,16 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                         this.attentionPlayer = player.getUUID();
                         this.attentionTicks = 100; // ~5 segundos a 20 tps
 
-                        this.sendMercenaryMessage(player, this.randomProposal());
+                        this.sendContractInfo(player,
+                                "Tarifa: "
+                                        + rate
+                                        + " esmeralda"
+                                        + (rate == 1 ? "" : "s")
+                                        + " por "
+                                        + daysPerPurchase
+                                        + " día"
+                                        + (daysPerPurchase == 1 ? "" : "s")
+                                        + " de servicio.");
                     } else {
                         // Segundo clic → contratar
                         boolean discountAvailable = this.isBundleDiscountAvailableFor(player);
@@ -4415,10 +4450,12 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         // Clic derecho sin shift → abrir inventario del mercenario (solo si es el dueño)
         if (!isSneaking) {
             if (!this.level().isClientSide()) {
-                if (this.ownerUuid != null && isOwner) {
+                if (this.canOwnerOpenInventory(player)) {
                     if (player instanceof ServerPlayer serverPlayer) {
                         this.openInventoryFor(serverPlayer);
                     }
+                    return InteractionResult.CONSUME;
+                } else if (this.ownerUuid != null && isOwner) {
                     return InteractionResult.CONSUME;
                 } else if (this.ownerUuid == null) {
                     // Mostrar tarifa en action bar

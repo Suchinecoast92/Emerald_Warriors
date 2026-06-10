@@ -177,7 +177,7 @@ public class ContractRenewWarningGoal extends Goal {
             this.mercenary.getNavigation().stop();
 
             if (this.mercenary.hasLineOfSight(owner)) {
-                this.mercenary.sendMercenaryMessage(owner, this.mercenary.randomContractRenewWarnMessage());
+                // Diálogo RPG desactivado; el aviso en action bar se muestra en windowTicks.
                 this.mercenary.markSentContractRenewWarning();
                 this.windowTicks = WINDOW_TICKS;
                 this.approachTicks = 0;
