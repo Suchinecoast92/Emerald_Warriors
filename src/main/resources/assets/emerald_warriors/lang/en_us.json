@@ -1,5 +1,66 @@
 {
   "entity.emerald_warriors.emerald_mercenary": "Mercenary",
   "container.emerald_warriors.mercenary": "Mercenary",
-  "item.emerald_warriors.emerald_mercenary_spawn_egg": "Spawn Mercenary"
+  "item.emerald_warriors.emerald_mercenary_spawn_egg": "Spawn Mercenary",
+
+  "emerald_warriors.order.follow": "Follow me",
+  "emerald_warriors.order.neutral": "Unassigned",
+  "emerald_warriors.order.guard": "Guard here",
+  "emerald_warriors.order.patrol": "Patrol area",
+
+  "emerald_warriors.rank.recruit": "Recruit",
+  "emerald_warriors.rank.soldier": "Novice",
+  "emerald_warriors.rank.sentinel": "Apprentice",
+  "emerald_warriors.rank.veteran": "Qualified",
+  "emerald_warriors.rank.ancient_guard": "Expert",
+
+  "emerald_warriors.unit.day": "%s day",
+  "emerald_warriors.unit.days": "%s days",
+  "emerald_warriors.unit.emerald": "%s emerald",
+  "emerald_warriors.unit.emeralds": "%s emeralds",
+  "emerald_warriors.unit.mercenary": "%s mercenary",
+  "emerald_warriors.unit.mercenaries": "%s mercenaries",
+
+  "emerald_warriors.contract.offer.1_1": "%1$s emerald → %2$s day",
+  "emerald_warriors.contract.offer.1_n": "%1$s emerald → %2$s days",
+  "emerald_warriors.contract.offer.n_1": "%1$s emeralds → %2$s day",
+  "emerald_warriors.contract.offer.n_n": "%1$s emeralds → %2$s days",
+
+  "emerald_warriors.contract.active": "Active contract.",
+  "emerald_warriors.contract.started": "Active contract: %s.",
+  "emerald_warriors.contract.extended": "Contract extended: +%1$s. Total: %2$s.",
+  "emerald_warriors.contract.ending": "Contract ending soon.",
+  "emerald_warriors.contract.terminated": "Contract ended.",
+  "emerald_warriors.contract.max": "Contract at maximum.",
+  "emerald_warriors.contract.renew_unavailable": "Renewal unavailable.",
+  "emerald_warriors.contract.hire_available_in": "Available for hire in %s.",
+  "emerald_warriors.contract.payment.invalid_bundle": "Invalid payment. Empty bundle.",
+  "emerald_warriors.contract.payment.invalid_multiple": "Invalid payment. Use multiples of %s.",
+  "emerald_warriors.contract.payment.insufficient": "Not enough emeralds.",
+
+  "emerald_warriors.order.changed": "Order: %s",
+  "emerald_warriors.gui.title": "%1$s : %2$s",
+  "emerald_warriors.gui.terminate": "End",
+  "emerald_warriors.gui.confirm": "Confirm (%ss)",
+  "emerald_warriors.gui.terminate.tooltip": "End contract",
+  "emerald_warriors.gui.confirm.tooltip": "Confirm ending contract",
+  "emerald_warriors.gui.players": "Players:",
+  "emerald_warriors.gui.exp": "EXP",
+  "emerald_warriors.gui.pvp.tooltip": "Automatic PvP against players. Always helps if you attack first.",
+  "emerald_warriors.gui.pvp.tooltip.on": "Players: ON — defends owner and territorial PvP",
+  "emerald_warriors.gui.pvp.tooltip.off": "Players: OFF — ignores hits on owner; helps if you attack",
+
+  "emerald_warriors.horn.order_cycle": "[♪] Order: %1$s (%2$s)",
+  "emerald_warriors.horn.linked": "[♪] Linked to horn. (%s total)",
+  "emerald_warriors.horn.unlinked": "[♪] Unlinked from horn. (%s remaining)",
+  "emerald_warriors.horn.not_owner": "This mercenary is not yours.",
+  "emerald_warriors.horn.command": "[♪] %1$s → %2$s",
+  "emerald_warriors.horn.none_in_range": "[♪] No linked mercenaries in range.",
+
+  "emerald_warriors.rank_up": "%1$s promoted to %2$s!",
+
+  "emerald_warriors.command.no_mercenaries": "No owned mercenaries nearby (radius %s blocks).",
+  "emerald_warriors.command.rank_up": "%1$s promoted to %2$s",
+  "emerald_warriors.command.exp_added": "Added %1$s EXP to %2$s",
+  "emerald_warriors.command.rank_ups": "%s ranked up!"
 }

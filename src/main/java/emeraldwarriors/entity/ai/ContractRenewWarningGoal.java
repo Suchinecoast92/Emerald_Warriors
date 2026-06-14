@@ -1,6 +1,7 @@
 package emeraldwarriors.entity.ai;
 
 import emeraldwarriors.entity.EmeraldMercenaryEntity;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.pathfinder.Path;
@@ -151,7 +152,7 @@ public class ContractRenewWarningGoal extends Goal {
             this.mercenary.getNavigation().stop();
 
             if (this.mercenary.tickCount % 20 == 0) {
-                this.mercenary.sendContractInfo(owner, "Contrato por concluir");
+                this.mercenary.sendContractInfo(owner, Component.translatable("emerald_warriors.contract.ending"));
             }
 
             double cancelDist = 16.0D;

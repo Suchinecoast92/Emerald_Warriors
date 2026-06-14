@@ -1,7 +1,9 @@
 package emeraldwarriors.horn;
 
 import emeraldwarriors.mercenary.MercenaryOrder;
+import emeraldwarriors.mercenary.MercenaryTranslations;
 import net.fabricmc.fabric.api.event.player.UseItemCallback;
+import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -21,16 +23,10 @@ import net.minecraft.world.level.Level;
  */
 public class MercenaryHornListener {
 
-    private static final String ORDER_SYMBOL = "♪";
-
     public static void register() {
         registerItemUse();
     }
 
-    // ──────────────────────────────────────────────────────────────────
-    // Shift + Right-click in air → cycle stored order (suppress vanilla)
-    // Normal Right-click         → PASS (vanilla animation + sound)
-    // ──────────────────────────────────────────────────────────────────
     private static void registerItemUse() {
         UseItemCallback.EVENT.register((Player player, Level level, InteractionHand hand) -> {
 
@@ -40,13 +36,14 @@ public class MercenaryHornListener {
             if (!HornGroupManager.isGoatHorn(stack)) return InteractionResult.PASS;
             if (!player.isShiftKeyDown()) return InteractionResult.PASS;
 
-            // Shift + click: suppress vanilla, cycle order
             if (level.isClientSide()) return InteractionResult.SUCCESS;
 
             MercenaryOrder newOrder = HornGroupManager.cycleOrder(stack);
             int count = HornGroupManager.getLinkedCount(stack);
-            player.displayClientMessage(Component.literal("§e[" + ORDER_SYMBOL + "] Orden: §f" +
-                    newOrder.getDisplayName() + " §7(" + count + " mercenario" + (count != 1 ? "s" : "") + ")"), true);
+            player.displayClientMessage(Component.translatable("emerald_warriors.horn.order_cycle",
+                            newOrder.getDisplayName(),
+                            MercenaryTranslations.mercenaries(count))
+                    .withStyle(ChatFormatting.YELLOW), true);
             return InteractionResult.SUCCESS;
         });
     }

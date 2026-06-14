@@ -70,7 +70,7 @@ public class MercenaryScreen extends AbstractContainerScreen<MercenaryMenu> {
 
         int buttonX = this.leftPos + (this.imageWidth - TERMINATE_BUTTON_WIDTH) / 2;
         int buttonY = this.topPos + this.imageHeight + 8;
-        this.terminateButton = this.addRenderableWidget(Button.builder(Component.literal("Finalizar"), button -> {
+        this.terminateButton = this.addRenderableWidget(Button.builder(Component.translatable("emerald_warriors.gui.terminate"), button -> {
                     boolean wasConfirmPending = this.menu.isTerminateConfirmPending();
                     if (this.minecraft != null && this.minecraft.gameMode != null) {
                         this.minecraft.gameMode.handleInventoryButtonClick(this.menu.containerId, MercenaryMenu.BUTTON_TERMINATE_CONTRACT);
@@ -80,7 +80,7 @@ public class MercenaryScreen extends AbstractContainerScreen<MercenaryMenu> {
                     }
                 })
                 .bounds(buttonX, buttonY, TERMINATE_BUTTON_WIDTH, TERMINATE_BUTTON_HEIGHT)
-                .tooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal("Finalizar contrato")))
+                .tooltip(net.minecraft.client.gui.components.Tooltip.create(Component.translatable("emerald_warriors.gui.terminate.tooltip")))
                 .build());
 
         int playerToggleX = this.leftPos + 62;
@@ -91,9 +91,7 @@ public class MercenaryScreen extends AbstractContainerScreen<MercenaryMenu> {
                     }
                 })
                 .bounds(playerToggleX, playerToggleY, PLAYER_TOGGLE_SIZE, PLAYER_TOGGLE_SIZE)
-                .tooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal(
-                        "PvP automatico contra jugadores. Siempre te ayuda si tu atacas primero."
-                )))
+                .tooltip(net.minecraft.client.gui.components.Tooltip.create(Component.translatable("emerald_warriors.gui.pvp.tooltip")))
                 .build());
         this.updateTerminateButton();
         this.updatePlayerTargetsButton();
@@ -192,7 +190,7 @@ public class MercenaryScreen extends AbstractContainerScreen<MercenaryMenu> {
         }
 
         // Etiqueta "EXP"
-        g.drawString(this.font, "EXP", infoX, 29, 0xFF404040, false);
+        g.drawString(this.font, Component.translatable("emerald_warriors.gui.exp"), infoX, 29, 0xFF404040, false);
 
         // Barra de EXP
         int xpY = 39;
@@ -215,7 +213,7 @@ public class MercenaryScreen extends AbstractContainerScreen<MercenaryMenu> {
         if (shouldShowPlayerTargetsToggle()) {
             int pvpLabelX = infoX + 20;
             int pvpLabelY = 57;
-            g.drawString(this.font, "Jugadores:", pvpLabelX, pvpLabelY, 0xFF404040, false);
+            g.drawString(this.font, Component.translatable("emerald_warriors.gui.players"), pvpLabelX, pvpLabelY, 0xFF404040, false);
             boolean enabled = this.menu.allowPlayerTargets();
             String state = enabled ? "ON" : "OFF";
             int stateColor = enabled ? 0xFF2E7D32 : 0xFFAA2222;
@@ -240,12 +238,12 @@ public class MercenaryScreen extends AbstractContainerScreen<MercenaryMenu> {
         boolean confirmPending = this.menu.isTerminateConfirmPending();
         if (confirmPending) {
             int secondsLeft = Math.max(1, (this.menu.getTerminateConfirmTicksRemaining() + 19) / 20);
-            this.terminateButton.setMessage(Component.literal("Confirmar (" + secondsLeft + "s)"));
+            this.terminateButton.setMessage(Component.translatable("emerald_warriors.gui.confirm", secondsLeft));
         } else {
-            this.terminateButton.setMessage(Component.literal("Finalizar"));
+            this.terminateButton.setMessage(Component.translatable("emerald_warriors.gui.terminate"));
         }
-        this.terminateButton.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal(
-                confirmPending ? "Confirmar finalizacion del contrato" : "Finalizar contrato"
+        this.terminateButton.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.translatable(
+                confirmPending ? "emerald_warriors.gui.confirm.tooltip" : "emerald_warriors.gui.terminate.tooltip"
         )));
         this.terminateButton.active = this.pendingCloseTicks < 0;
     }
@@ -262,10 +260,10 @@ public class MercenaryScreen extends AbstractContainerScreen<MercenaryMenu> {
         }
         boolean enabled = this.menu.allowPlayerTargets();
         this.playerTargetsButton.setMessage(Component.literal(enabled ? "x" : ""));
-        this.playerTargetsButton.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.literal(
+        this.playerTargetsButton.setTooltip(net.minecraft.client.gui.components.Tooltip.create(Component.translatable(
                 enabled
-                        ? "Jugadores: ON — defiende al dueno y PvP territorial"
-                        : "Jugadores: OFF — ignora golpes al dueno; te ayuda si tu atacas"
+                        ? "emerald_warriors.gui.pvp.tooltip.on"
+                        : "emerald_warriors.gui.pvp.tooltip.off"
         )));
     }
 

@@ -1,13 +1,15 @@
 package emeraldwarriors.mercenary;
 
-public enum MercenaryRank {
-    //                  suffix    hp   dmgMul  kbRes  detectR  maxChase  guardR  patrolR  retreatHp
-    RECRUIT(           "cobre",   20,  1.00,   0.00,   8,       10,       6,     12,      0.20),
-    SOLDIER(           "hierro",  24,  1.05,   0.10,  12,       14,       7,     18,      0.22),
-    SENTINEL(          "oro",     26,  1.10,   0.15,  14,       18,       8,     24,      0.25),
-    VETERAN(           "esmeralda", 30, 1.15,  0.20,  16,       22,       9,     30,      0.28),
-    ANCIENT_GUARD(     "diamante", 36, 1.25,   0.30,  18,       24,      10,     36,      0.30);
+import net.minecraft.network.chat.Component;
 
+public enum MercenaryRank {
+    RECRUIT("emerald_warriors.rank.recruit", "cobre", 20, 1.00, 0.00, 8, 10, 6, 12, 0.20),
+    SOLDIER("emerald_warriors.rank.soldier", "hierro", 24, 1.05, 0.10, 12, 14, 7, 18, 0.22),
+    SENTINEL("emerald_warriors.rank.sentinel", "oro", 26, 1.10, 0.15, 14, 18, 8, 24, 0.25),
+    VETERAN("emerald_warriors.rank.veteran", "esmeralda", 30, 1.15, 0.20, 16, 22, 9, 30, 0.28),
+    ANCIENT_GUARD("emerald_warriors.rank.ancient_guard", "diamante", 36, 1.25, 0.30, 18, 24, 10, 36, 0.30);
+
+    private final String translationKey;
     private final String textureSuffix;
     private final int maxHealth;
     private final double damageMultiplier;
@@ -18,9 +20,10 @@ public enum MercenaryRank {
     private final int patrolRadius;
     private final double retreatHpFraction;
 
-    MercenaryRank(String textureSuffix, int maxHealth, double damageMultiplier, double knockbackResistance,
+    MercenaryRank(String translationKey, String textureSuffix, int maxHealth, double damageMultiplier, double knockbackResistance,
                   int detectionRadius, int maxChaseFromAnchor, int guardRadius, int patrolRadius,
                   double retreatHpFraction) {
+        this.translationKey = translationKey;
         this.textureSuffix = textureSuffix;
         this.maxHealth = maxHealth;
         this.damageMultiplier = damageMultiplier;
@@ -32,6 +35,14 @@ public enum MercenaryRank {
         this.retreatHpFraction = retreatHpFraction;
     }
 
+    public String getTranslationKey() {
+        return this.translationKey;
+    }
+
+    public Component getDisplayName() {
+        return Component.translatable(this.translationKey);
+    }
+
     public String getTextureSuffix() { return this.textureSuffix; }
     public int getMaxHealth() { return this.maxHealth; }
     public double getDamageMultiplier() { return this.damageMultiplier; }
@@ -41,15 +52,4 @@ public enum MercenaryRank {
     public int getGuardRadius() { return this.guardRadius; }
     public int getPatrolRadius() { return this.patrolRadius; }
     public double getRetreatHpFraction() { return this.retreatHpFraction; }
-
-    /** Nombres alineados con los rangos de aldeano en español. */
-    public String getDisplayName() {
-        return switch (this) {
-            case RECRUIT -> "Recluta";
-            case SOLDIER -> "Novato";
-            case SENTINEL -> "Aprendiz";
-            case VETERAN -> "Cualificado";
-            case ANCIENT_GUARD -> "Experto";
-        };
-    }
 }
