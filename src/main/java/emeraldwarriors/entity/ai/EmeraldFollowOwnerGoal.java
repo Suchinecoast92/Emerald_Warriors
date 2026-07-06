@@ -37,6 +37,9 @@ public class EmeraldFollowOwnerGoal extends Goal {
         if (order != MercenaryOrder.FOLLOW) {
             return false;
         }
+        if (this.mercenary.isTacticalHoldActive()) {
+            return false;
+        }
         // Don't follow if the system paused movement (too-far or owner offline)
         if (this.mercenary.isSystemForcedNone()) {
             return false;
@@ -63,6 +66,9 @@ public class EmeraldFollowOwnerGoal extends Goal {
     public boolean canContinueToUse() {
         MercenaryOrder order = this.mercenary.getCurrentOrder();
         if (order != MercenaryOrder.FOLLOW) {
+            return false;
+        }
+        if (this.mercenary.isTacticalHoldActive()) {
             return false;
         }
         // Stop following if system paused movement

@@ -8,6 +8,8 @@ import emeraldwarriors.entity.spawn.VillageMercenarySpawner;
 import emeraldwarriors.horn.MercenaryHornListener;
 import emeraldwarriors.item.ModItems;
 import emeraldwarriors.menu.ModMenus;
+import emeraldwarriors.spyglass.MercenarySpyglassListener;
+import emeraldwarriors.spyglass.SpyglassNetworking;
 import emeraldwarriors.worldgen.ModWorldgen;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -41,6 +43,8 @@ public class Emerald_Warriors implements ModInitializer {
 		ModItems.register();
 		ModMenus.register();
 		MercenaryHornListener.register();
+		MercenarySpyglassListener.register();
+		SpyglassNetworking.registerServer();
 		ModWorldgen.register();
 		if (ModConfig.get().toggles.villageSpawns) {
 			VillageMercenarySpawner.register();

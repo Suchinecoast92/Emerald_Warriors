@@ -3,7 +3,8 @@
 	"package": "emeraldwarriors.mixin.client",
 	"compatibilityLevel": "JAVA_21",
 	"client": [
-		"ExampleClientMixin"
+		"ExampleClientMixin",
+		"EntitySpyglassGlowMixin"
 	],
 	"injectors": {
 		"defaultRequire": 1

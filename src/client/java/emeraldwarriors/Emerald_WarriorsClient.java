@@ -5,6 +5,7 @@ import emeraldwarriors.client.render.EmeraldMercenaryRenderer;
 import emeraldwarriors.entity.ModEntities;
 import emeraldwarriors.inventory.MercenaryMenu;
 import emeraldwarriors.menu.ModMenus;
+import emeraldwarriors.spyglass.MercenarySpyglassClient;
 import net.fabricmc.api.ClientModInitializer;
 import net.minecraft.client.gui.screens.MenuScreens;
 import net.minecraft.client.renderer.entity.EntityRenderers;
@@ -12,6 +13,8 @@ import net.minecraft.client.renderer.entity.EntityRenderers;
 public class Emerald_WarriorsClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
+		MercenarySpyglassClient.register();
+
 		EntityRenderers.register(ModEntities.EMERALD_MERCENARY,
 				context -> new EmeraldMercenaryRenderer(context));
 

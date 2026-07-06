@@ -26,6 +26,9 @@ public class NeutralWanderGoal extends Goal {
         if (order != MercenaryOrder.NEUTRAL) {
             return false;
         }
+        if (this.mercenary.isTacticalHoldActive()) {
+            return false;
+        }
         if (this.mercenary.isSleeping()) {
             return false;
         }
@@ -46,6 +49,9 @@ public class NeutralWanderGoal extends Goal {
     public boolean canContinueToUse() {
         MercenaryOrder order = this.mercenary.getCurrentOrder();
         if (order != MercenaryOrder.NEUTRAL) {
+            return false;
+        }
+        if (this.mercenary.isTacticalHoldActive()) {
             return false;
         }
         if (this.mercenary.isSleeping()) {

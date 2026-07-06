@@ -57,6 +57,14 @@
   "emerald_warriors.horn.command": "[♪] %1$s → %2$s",
   "emerald_warriors.horn.none_in_range": "[♪] Ningún mercenario vinculado en rango.",
 
+  "emerald_warriors.spyglass.order_cycle": "[🔭] Orden: %1$s (%2$s)",
+  "emerald_warriors.spyglass.order_applied": "[🔭] %1$s → %2$s",
+  "emerald_warriors.spyglass.move": "[🔭] Ir al punto — %s",
+  "emerald_warriors.spyglass.attack": "[🔭] Atacar — %1$s → %2$s",
+  "emerald_warriors.spyglass.none_linked": "[🔭] Ningún mercenario vinculado en rango.",
+  "emerald_warriors.spyglass.linked": "[🔭] Vinculado al catalejo. (%s total)",
+  "emerald_warriors.spyglass.unlinked": "[🔭] Desvinculado del catalejo. (%s restantes)",
+
   "emerald_warriors.rank_up": "¡%1$s subió a %2$s!",
 
   "emerald_warriors.command.no_mercenaries": "No hay mercenarios tuyos cerca (radio %s bloques).",

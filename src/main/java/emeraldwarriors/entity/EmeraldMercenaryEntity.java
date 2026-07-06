@@ -3,6 +3,7 @@ package emeraldwarriors.entity;
 import emeraldwarriors.entity.ai.DefendVillagerGoal;
 import emeraldwarriors.entity.ai.EmeraldCrossbowAttackGoal;
 import emeraldwarriors.horn.HornGroupManager;
+import emeraldwarriors.spyglass.SpyglassGroupManager;
 import emeraldwarriors.entity.ai.EmeraldBowAttackGoal;
 import emeraldwarriors.entity.ai.EmeraldFollowOwnerGoal;
 import emeraldwarriors.entity.ai.EmeraldHurtByTargetGoal;
@@ -18,6 +19,8 @@ import emeraldwarriors.entity.ai.OwnerHurtTargetGoal;
 import emeraldwarriors.entity.ai.PatrolAroundPointGoal;
 import emeraldwarriors.entity.ai.RetreatLowHpGoal;
 import emeraldwarriors.entity.ai.ShieldAgainstCreeperGoal;
+import emeraldwarriors.entity.ai.TacticalAttackTargetGoal;
+import emeraldwarriors.entity.ai.TacticalHoldGoal;
 import emeraldwarriors.entity.ai.UseHealingItemGoal;
 import emeraldwarriors.entity.ai.MercenarySleepGoal;
 import emeraldwarriors.inventory.MercenaryInventory;
@@ -152,6 +155,13 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private OwnerHurtTargetGoal ownerHurtTargetGoal;
     private EmeraldHurtByTargetGoal hurtByTargetGoal;
     private DefendVillagerGoal defendVillagerGoal;
+    private TacticalAttackTargetGoal tacticalAttackTargetGoal;
+
+    // Spyglass tactical commands (temporary, do not change persistent MercenaryOrder)
+    private BlockPos tacticalHoldPos;
+    private boolean tacticalHoldActive;
+    private int tacticalAttackTargetId = -1;
+    private boolean tacticalAttackActive;
     private EmeraldNearestAttackableTargetGoal nearestAttackableGoal;
 
     private MercenaryRole lastAppliedRole = null;
@@ -260,6 +270,12 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                 for (int i = 0; i < inv.getContainerSize(); i++) {
                     ItemStack st = inv.getItem(i);
                     if (!HornGroupManager.isGoatHorn(st)) {
+                        if (!SpyglassGroupManager.isSpyglass(st)) {
+                            continue;
+                        }
+                        if (SpyglassGroupManager.isMercenaryLinked(st, myId)) {
+                            SpyglassGroupManager.removeMercenary(st, myId);
+                        }
                         continue;
                     }
                     if (HornGroupManager.isMercenaryLinked(st, myId)) {
@@ -531,6 +547,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         if (!this.isOwnerPlayer(commander)) {
             return;
         }
+        this.clearTacticalCommands();
 
         if (this.isSleeping()) {
             this.stopSleeping();
@@ -546,7 +563,156 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         }
     }
 
+    /** Called by the spyglass system to apply a persistent order (shift + right-click in air). */
+    public void setCurrentOrderFromSpyglass(MercenaryOrder order, Player commander) {
+        this.clearTacticalCommands();
+        this.setCurrentOrderFromHorn(order, commander);
+    }
+
+    public boolean applyTacticalMove(BlockPos pos, Player commander) {
+        return this.applyTacticalMove(pos, commander, null);
+    }
+
+    public boolean applyTacticalMove(BlockPos pos, Player commander, MercenaryOrder spyglassOrder) {
+        if (!this.isOwnerPlayer(commander) || pos == null || !this.canObeyTacticalCommands()) {
+            return false;
+        }
+        MercenaryOrder order = spyglassOrder != null ? spyglassOrder : this.getCurrentOrder();
+        if (spyglassOrder != null && spyglassOrder != this.getCurrentOrder()) {
+            this.syncOrderForTacticalCommand(spyglassOrder);
+        }
+        this.clearTacticalAttack();
+        this.tacticalHoldPos = pos.immutable();
+        this.tacticalHoldActive = true;
+        if (order == MercenaryOrder.GUARD) {
+            this.guardPos = this.tacticalHoldPos;
+        } else if (order == MercenaryOrder.PATROL) {
+            this.patrolCenter = this.tacticalHoldPos;
+        }
+        this.setTarget(null);
+        this.getNavigation().stop();
+        return true;
+    }
+
+    /** Switch persistent order for a spyglass command without clearing the tactical state about to be set. */
+    private void syncOrderForTacticalCommand(MercenaryOrder order) {
+        if (this.isSleeping()) {
+            this.stopSleeping();
+        }
+        this.currentOrder = order;
+        this.getEntityData().set(DATA_ORDER_ORDINAL, order.ordinal());
+        if (!this.level().isClientSide()) {
+            this.setAggressive(false);
+            if (this.isUsingItem()) {
+                this.stopUsingItem();
+            }
+            this.refreshTargetGoalsByOrder();
+        }
+    }
+
+    public boolean applyTacticalAttack(LivingEntity target, Player commander) {
+        return this.applyTacticalAttack(target, commander, null);
+    }
+
+    public boolean applyTacticalAttack(LivingEntity target, Player commander, MercenaryOrder spyglassOrder) {
+        if (!this.isOwnerPlayer(commander) || target == null || !target.isAlive()
+                || !this.canObeyTacticalCommands()) {
+            return false;
+        }
+        if (target == commander || target == this) {
+            return false;
+        }
+        if (spyglassOrder != null && spyglassOrder != this.getCurrentOrder()) {
+            this.syncOrderForTacticalCommand(spyglassOrder);
+        }
+        this.clearTacticalHold();
+        this.tacticalAttackTargetId = target.getId();
+        this.tacticalAttackActive = true;
+        this.setTarget(target);
+        this.alertBrotherhood(target);
+        return true;
+    }
+
+    public void clearTacticalCommands() {
+        this.clearTacticalHold();
+        this.clearTacticalAttack();
+    }
+
+    public void clearTacticalHold() {
+        this.tacticalHoldActive = false;
+        this.tacticalHoldPos = null;
+    }
+
+    public void clearTacticalAttack() {
+        int previousTargetId = this.tacticalAttackTargetId;
+        this.tacticalAttackActive = false;
+        this.tacticalAttackTargetId = -1;
+        if (this.getTarget() != null && this.getTarget().getId() == previousTargetId) {
+            this.setTarget(null);
+        }
+    }
+
+    public boolean isTacticalHoldActive() {
+        return this.tacticalHoldActive && this.tacticalHoldPos != null;
+    }
+
+    public boolean isTacticalAttackActive() {
+        return this.tacticalAttackActive;
+    }
+
+    public BlockPos getTacticalHoldPos() {
+        return this.tacticalHoldPos;
+    }
+
+    public LivingEntity getTacticalAttackTarget() {
+        if (!this.tacticalAttackActive || this.tacticalAttackTargetId < 0) {
+            return null;
+        }
+        if (!(this.level() instanceof ServerLevel sl)) {
+            return null;
+        }
+        var entity = sl.getEntity(this.tacticalAttackTargetId);
+        return entity instanceof LivingEntity living ? living : null;
+    }
+
+    public boolean canObeyTacticalCommands() {
+        if (!this.isAlive()) {
+            return false;
+        }
+        float fraction = this.getHealth() / this.getMaxHealth();
+        return fraction >= this.getRank().getRetreatHpFraction();
+    }
+
+    private void tickTacticalState() {
+        if (this.tacticalHoldActive && this.tacticalHoldPos != null) {
+            MercenaryOrder order = this.getCurrentOrder();
+            double dist = this.distanceToSqr(
+                    this.tacticalHoldPos.getX() + 0.5, this.tacticalHoldPos.getY(), this.tacticalHoldPos.getZ() + 0.5);
+            if (dist <= 2.25D && (order == MercenaryOrder.GUARD || order == MercenaryOrder.PATROL)) {
+                this.clearTacticalHold();
+            } else if (order == MercenaryOrder.FOLLOW) {
+                LivingEntity owner = this.getOwner();
+                if (owner != null) {
+                    double leash = this.getRank().getMaxChaseFromAnchor() * 1.5D;
+                    if (this.distanceToSqr(owner) > leash * leash) {
+                        this.clearTacticalHold();
+                    }
+                }
+            }
+        }
+        if (this.tacticalAttackActive) {
+            LivingEntity target = this.getTacticalAttackTarget();
+            if (target == null || !target.isAlive()) {
+                this.clearTacticalAttack();
+            }
+        }
+        if (!this.canObeyTacticalCommands()) {
+            this.clearTacticalCommands();
+        }
+    }
+
     public void setCurrentOrder(MercenaryOrder order) {
+        this.clearTacticalCommands();
         this.currentOrder = order;
         this.getEntityData().set(DATA_ORDER_ORDINAL, order.ordinal());
 
@@ -1471,6 +1637,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         // Prioridad 2: Aviso preventivo de renovación (solo fuera de combate)
         this.goalSelector.addGoal(2, new ContractRenewWarningGoal(this, 1.0D));
 
+        // Prioridad 2: Ir al punto marcado con catalejo y quedarse (táctico)
+        this.goalSelector.addGoal(2, new TacticalHoldGoal(this, 1.0D));
+
         // Prioridad 3: Dormir en cama por la noche (solo en orden NEUTRAL)
         this.goalSelector.addGoal(3, new MercenarySleepGoal(this, 1.0D));
 
@@ -1509,6 +1678,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         // 3: Hostil más cercano (solo en GUARD/PATROL; se añade/quita dinámicamente)
         // Ahora ataca mobs y jugadores (excepto whitelist)
         this.nearestAttackableGoal = new EmeraldNearestAttackableTargetGoal(this);
+        // 0: Objetivo marcado con catalejo (siempre activo; no se quita al cambiar orden)
+        this.tacticalAttackTargetGoal = new TacticalAttackTargetGoal(this);
+        this.targetSelector.addGoal(0, this.tacticalAttackTargetGoal);
         // Initialized in refreshTargetGoalsByOrder() after goals are registered
 
         if (this.meleeAttackGoal != null) {
@@ -1788,7 +1960,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         }
         boolean selfDefense = target == this.getLastHurtByMob()
                 && this.tickCount - this.getLastHurtByMobTimestamp() < 100;
-        if (selfDefense || this.isOwnerDirectedTarget(target)) {
+        if (selfDefense || this.isOwnerDirectedTarget(target) || this.isTacticalDirectedTarget(target)) {
             return;
         }
         this.setTarget(null);
@@ -2207,6 +2379,13 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         return this.distanceToSqr(owner) <= maxSqr || this.distanceToSqr(target) <= maxSqr;
     }
 
+    private boolean isTacticalDirectedTarget(LivingEntity target) {
+        if (!this.tacticalAttackActive || target == null) {
+            return false;
+        }
+        return target.getId() == this.tacticalAttackTargetId;
+    }
+
     private boolean isOwnerDefenseTarget(LivingEntity target) {
         if (!this.allowPlayerTargets || !(target instanceof Player)) {
             return false;
@@ -2289,6 +2468,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
             if (target instanceof Player p
                     && !this.isOwnerDirectedTarget(target)
+                    && !this.isTacticalDirectedTarget(target)
                     && !this.isOwnerDefenseTarget(target)
                     && !this.isBrotherhoodAssistTarget(target)
                     && !(this.disciplineExOwnerUuid != null
@@ -2316,7 +2496,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
             boolean recentAttacker = (target == this.getLastHurtByMob())
                     && (this.tickCount - this.getLastHurtByMobTimestamp() < 100);
-            if (recentAttacker || this.isOwnerDefenseTarget(target)) {
+            if (recentAttacker || this.isOwnerDefenseTarget(target) || this.isTacticalDirectedTarget(target)) {
                 super.setTarget(target);
                 return;
             }
@@ -2814,6 +2994,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                 this.tickContractExpireNotify();
                 return;
             }
+
+            this.tickTacticalState();
 
             LivingEntity currentTarget = this.getTarget();
             if (currentTarget instanceof AbstractVillager || currentTarget instanceof IronGolem) {
@@ -4380,6 +4562,34 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                         }
                     }
                 }
+            }
+            return this.level().isClientSide() ? InteractionResult.SUCCESS : InteractionResult.CONSUME;
+        }
+
+        // Shift + clic derecho con catalejo → vincular/desvincular al grupo del catalejo
+        if (isSneaking && hand == InteractionHand.MAIN_HAND && SpyglassGroupManager.isSpyglass(stack)) {
+            if (this.ownerUuid != null && isOwner) {
+                if (!this.level().isClientSide()) {
+                    boolean nowLinked = SpyglassGroupManager.toggleMercenary(stack, this.getUUID());
+                    if (this.level() instanceof ServerLevel sl) {
+                        if (nowLinked) {
+                            sl.sendParticles(ParticleTypes.HAPPY_VILLAGER,
+                                    this.getX(), this.getY() + 1.0, this.getZ(), 10, 0.4, 0.5, 0.4, 0.1);
+                        } else {
+                            sl.sendParticles(ParticleTypes.SMOKE,
+                                    this.getX(), this.getY() + 1.0, this.getZ(), 8, 0.4, 0.5, 0.4, 0.05);
+                        }
+                    }
+                    int count = SpyglassGroupManager.getLinkedCount(stack);
+                    player.displayClientMessage(
+                            Component.translatable(nowLinked ? "emerald_warriors.spyglass.linked" : "emerald_warriors.spyglass.unlinked", count)
+                                    .withStyle(nowLinked ? ChatFormatting.GREEN : ChatFormatting.RED),
+                            false);
+                }
+            } else if (!this.level().isClientSide()) {
+                player.displayClientMessage(
+                        Component.translatable("emerald_warriors.horn.not_owner").withStyle(ChatFormatting.RED),
+                        false);
             }
             return this.level().isClientSide() ? InteractionResult.SUCCESS : InteractionResult.CONSUME;
         }

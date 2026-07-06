@@ -57,6 +57,14 @@
   "emerald_warriors.horn.command": "[♪] %1$s → %2$s",
   "emerald_warriors.horn.none_in_range": "[♪] No linked mercenaries in range.",
 
+  "emerald_warriors.spyglass.order_cycle": "[🔭] Order: %1$s (%2$s)",
+  "emerald_warriors.spyglass.order_applied": "[🔭] %1$s → %2$s",
+  "emerald_warriors.spyglass.move": "[🔭] Move — %s",
+  "emerald_warriors.spyglass.attack": "[🔭] Attack — %1$s → %2$s",
+  "emerald_warriors.spyglass.none_linked": "[🔭] No linked mercenaries in range.",
+  "emerald_warriors.spyglass.linked": "[🔭] Linked to spyglass. (%s total)",
+  "emerald_warriors.spyglass.unlinked": "[🔭] Unlinked from spyglass. (%s remaining)",
+
   "emerald_warriors.rank_up": "%1$s promoted to %2$s!",
 
   "emerald_warriors.command.no_mercenaries": "No owned mercenaries nearby (radius %s blocks).",
