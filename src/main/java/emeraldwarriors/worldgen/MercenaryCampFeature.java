@@ -1,15 +1,13 @@
 package emeraldwarriors.worldgen;
 
 import com.mojang.serialization.Codec;
-import emeraldwarriors.Emerald_Warriors;
 import emeraldwarriors.config.ModConfig;
 import emeraldwarriors.entity.EmeraldMercenaryEntity;
 import emeraldwarriors.entity.ModEntities;
 import emeraldwarriors.mount.MercenaryMountHelper;
-import net.minecraft.server.level.ServerLevel;
 import net.fabricmc.fabric.api.tag.convention.v2.ConventionalBiomeTags;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
@@ -41,9 +39,6 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
 
     @Override
     public boolean place(FeaturePlaceContext<NoneFeatureConfiguration> context) {
-        WorldGenLevel level = context.level();
-        RandomSource ctxRandom = context.random();
-
         var cfg = ModConfig.get();
         if (!cfg.toggles.camps) {
             return false;
@@ -52,14 +47,19 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
         if (chance <= 0) {
             return false;
         }
+        RandomSource ctxRandom = context.random();
         if (chance > 1 && ctxRandom.nextInt(chance) != 0) {
             return false;
         }
 
+        WorldGenLevel level = context.level();
         BlockPos origin = context.origin();
         BlockPos center = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, origin);
-
         RandomSource random = new LegacyRandomSource(ctxRandom.nextLong() ^ center.asLong());
+        return generateCamp(level, center, random);
+    }
+
+    boolean generateCamp(WorldGenLevel level, BlockPos center, RandomSource random) {
 
         if (center.getY() <= level.getSeaLevel() + 1) {
             return false;
@@ -78,7 +78,7 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
         int maxY = center.getY();
         for (int dx = -5; dx <= 5; dx += 5) {
             for (int dz = -5; dz <= 5; dz += 5) {
-                BlockPos p = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, origin.offset(dx, 0, dz));
+                BlockPos p = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, center.offset(dx, 0, dz));
                 minY = Math.min(minY, p.getY());
                 maxY = Math.max(maxY, p.getY());
                 if (maxY - minY > 1) {
@@ -96,22 +96,6 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
         placeBase(level, center, random);
         placeCampObjects(level, center, facing, random);
         trySpawnCampMercenaries(level, center, random);
-
-        if (FabricLoader.getInstance().isDevelopmentEnvironment()) {
-            Identifier biomeId = level.getBiome(center).unwrapKey()
-                    .map(ResourceKey::identifier)
-                    .orElse(Identifier.fromNamespaceAndPath("minecraft", "unknown"));
-            WoodPalette palette = getPaletteForBiome(level, center);
-            Emerald_Warriors.LOGGER.info(
-                    "Generated mercenary camp at {},{},{} biome={} slab={} fence={}",
-                    center.getX(),
-                    center.getY(),
-                    center.getZ(),
-                    biomeId,
-                    palette.slab(),
-                    palette.fence()
-            );
-        }
 
         return true;
     }

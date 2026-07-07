@@ -24,6 +24,8 @@ import emeraldwarriors.entity.ai.TacticalHoldGoal;
 import emeraldwarriors.entity.ai.UseHealingItemGoal;
 import emeraldwarriors.entity.ai.MercenarySleepGoal;
 import emeraldwarriors.entity.ai.MercenaryWildMountGoal;
+import emeraldwarriors.entity.ai.MercenaryWildPatrolFollowGoal;
+import emeraldwarriors.entity.spawn.MercenaryWildSpawnHelper;
 import emeraldwarriors.inventory.MercenaryInventory;
 import emeraldwarriors.inventory.MercenaryMenu;
 import emeraldwarriors.mount.MercenaryMountHelper;
@@ -235,6 +237,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     // Caballo vinculado (monturas v3)
     private UUID boundHorseUuid;
+    private UUID wildPatrolLeaderUuid;
     private UUID pendingHorseBindPlayerUuid;
     private int pendingHorseBindTicks;
     private int mountLeadCooldown;
@@ -907,10 +910,28 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
         this.applySpawnGearLoadout();
 
-        // Orden por defecto: seguir al owner
-        this.setCurrentOrder(MercenaryOrder.FOLLOW);
+        if (this.ownerUuid == null) {
+            if (spawnReason == EntitySpawnReason.NATURAL && level instanceof ServerLevel serverLevel) {
+                data = MercenaryWildSpawnHelper.handleNaturalSpawn(this, serverLevel, data);
+            } else if (spawnReason == EntitySpawnReason.STRUCTURE) {
+                // El campamento asigna PATROL + montura después del spawn.
+                this.setCurrentOrder(MercenaryOrder.NEUTRAL);
+            } else {
+                this.setCurrentOrder(MercenaryOrder.NEUTRAL);
+                this.setPatrolCenter(this.blockPosition());
+            }
+        } else {
+            this.setCurrentOrder(MercenaryOrder.FOLLOW);
+        }
 
         return data;
+    }
+
+    /** Reaplica equipo tras cambiar rango en spawn salvaje (líder de patrulla montada). */
+    public void reapplySpawnGearForRank() {
+        this.applyRankAttributes();
+        this.setHealth(this.getMaxHealth());
+        this.applySpawnGearLoadout();
     }
 
     private enum SpawnArmorTier {
@@ -1275,6 +1296,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         if (this.boundHorseUuid != null) {
             output.putString("BoundHorse", this.boundHorseUuid.toString());
         }
+        if (this.wildPatrolLeaderUuid != null) {
+            output.putString("WildPatrolLeader", this.wildPatrolLeaderUuid.toString());
+        }
         if (this.boundBedPos != null) {
             output.putInt("BoundBedX", this.boundBedPos.getX());
             output.putInt("BoundBedY", this.boundBedPos.getY());
@@ -1438,6 +1462,14 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                 this.boundHorseUuid = UUID.fromString(value);
             } catch (IllegalArgumentException ignored) {
                 this.boundHorseUuid = null;
+            }
+        });
+
+        input.getString("WildPatrolLeader").ifPresent(value -> {
+            try {
+                this.wildPatrolLeaderUuid = UUID.fromString(value);
+            } catch (IllegalArgumentException ignored) {
+                this.wildPatrolLeaderUuid = null;
             }
         });
 
@@ -1720,6 +1752,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
         // Prioridad 3: Montar caballo vinculado (salvajes sin dueño)
         this.goalSelector.addGoal(3, new MercenaryWildMountGoal(this));
+        this.goalSelector.addGoal(3, new MercenaryWildPatrolFollowGoal(this));
 
         // Prioridad 3: Movimiento según orden
         this.goalSelector.addGoal(3, new EmeraldFollowOwnerGoal(this, 1.0D, 5.0F, 2.0F));
@@ -1881,6 +1914,14 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         if (this.isPassenger() && this.getVehicle() instanceof AbstractHorse) {
             this.stopRiding();
         }
+    }
+
+    public UUID getWildPatrolLeaderUuid() {
+        return this.wildPatrolLeaderUuid;
+    }
+
+    public void setWildPatrolLeaderUuid(UUID leaderUuid) {
+        this.wildPatrolLeaderUuid = leaderUuid;
     }
 
     public int getMountLeadCooldown() {

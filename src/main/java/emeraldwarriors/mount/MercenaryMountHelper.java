@@ -26,6 +26,10 @@ public final class MercenaryMountHelper {
     public static final double BIND_RANGE = 8.0D;
     public static final double MOUNT_RANGE = 16.0D;
     public static final double MOUNT_APPROACH_RANGE = 24.0D;
+    /** Probabilidad de que un mercenario de campamento reciba montura. */
+    public static final float CAMP_MOUNT_ASSIGN_CHANCE = 0.25F;
+    /** Probabilidad de empezar montado cuando tiene montura en campamento. */
+    public static final float CAMP_MOUNT_START_RIDING_CHANCE = 0.4F;
 
     private MercenaryMountHelper() {
     }
@@ -36,19 +40,53 @@ public final class MercenaryMountHelper {
             BlockPos campCenter,
             RandomSource random
     ) {
-        AbstractHorse mount = spawnTamedMount(level, merc.blockPosition(), campCenter, random);
+        if (random.nextFloat() >= CAMP_MOUNT_ASSIGN_CHANCE) {
+            merc.setCurrentOrder(MercenaryOrder.PATROL);
+            merc.setPatrolCenter(campCenter);
+            return;
+        }
+        scheduleWildMountSetup(level, merc, campCenter, CAMP_MOUNT_START_RIDING_CHANCE);
+        merc.setPatrolCenter(campCenter);
+    }
+
+    /**
+     * Diferir al siguiente tick evita fallos de montaje durante worldgen / spawn en bloque.
+     */
+    public static void scheduleWildMountSetup(
+            ServerLevel level,
+            EmeraldMercenaryEntity merc,
+            BlockPos biomePos,
+            float startMountedChance
+    ) {
+        level.getServer().execute(() -> finishWildMountSetup(level, merc, biomePos, startMountedChance));
+    }
+
+    private static void finishWildMountSetup(
+            ServerLevel level,
+            EmeraldMercenaryEntity merc,
+            BlockPos biomePos,
+            float startMountedChance
+    ) {
+        if (!merc.isAlive() || merc.level() != level) {
+            return;
+        }
+        RandomSource random = merc.getRandom();
+        AbstractHorse mount = spawnTamedMount(level, merc.blockPosition(), biomePos, random);
         if (mount == null) {
             return;
         }
 
+        mount.setPos(merc.getX(), merc.getY(), merc.getZ());
         claimHorseForMercenary(level, merc, mount);
         merc.setCurrentOrder(MercenaryOrder.PATROL);
-        merc.setPatrolCenter(campCenter);
 
-        boolean startMounted = random.nextFloat() < 0.4F;
+        boolean startMounted = random.nextFloat() < startMountedChance;
         if (startMounted) {
             MercenaryMounts.prepareForMount(mount);
-            merc.startRiding(mount);
+            if (!merc.startRiding(mount)) {
+                mount.setLeashedTo(merc, true);
+                startMounted = false;
+            }
         } else {
             mount.setLeashedTo(merc, true);
         }

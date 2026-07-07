@@ -97,6 +97,13 @@ public final class ModConfig {
             config.configVersion = 6;
         }
 
+        if (config.configVersion < 7) {
+            if (config.solitarySpawn != null && config.solitarySpawn.maxGroup == 1) {
+                config.solitarySpawn.maxGroup = 4;
+            }
+            config.configVersion = 7;
+        }
+
         save(path, config);
     }
 

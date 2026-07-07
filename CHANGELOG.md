@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Monturas v3.1
+- Caballo, burro, mula y camello en campamentos y contratados.
+- Velocidad de viaje y combate montado; escala especial para camello.
+- Montaje diferido en spawn salvaje para evitar fallos en worldgen.
+
+### Spawn salvaje
+- Grupos de 1–4 mercenarios (`solitarySpawn.maxGroup`).
+- ~22 % de grupos con patrulla montada (líder Veterano/Experto + acompañantes).
+- Campamentos: ~25 % de mercenarios con montura; ~40 % de esos empiezan montados.
+
 ## [1.0.0] — 2026-06-07
 
 Primera versión estable jugable.

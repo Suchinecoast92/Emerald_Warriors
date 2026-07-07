@@ -89,7 +89,7 @@ El mensaje muestra el **nombre de la montura** (`[🐴] Relámpago vinculado.`).
 
 **Monturas soportadas**
 - Caballo, burro, mula y camello (todos con silla).
-- Campamentos: 50 % caballo, 20 % burro, 15 % mula, 15 % camello.
+- Campamentos: 50 % caballo, 20 % burro, 15 % mula, 15 % camello (25 % de mercenarios del campamento reciben montura).
 - En **desierto** y **badlands**: 70 % camello, 15 % caballo, 10 % burro, 5 % mula.
 - Camello sentado: se levanta automáticamente antes de montar o moverse con él.
 - Ajustes de altura por tipo (anclaje + render) para que el jinete quede bien en la silla.
@@ -104,8 +104,13 @@ El mensaje muestra el **nombre de la montura** (`[🐴] Relámpago vinculado.`).
 
 **Campamentos salvajes**
 - Cada mercenario de campamento spawnea con una montura domada y silla (caballo, burro, mula o camello).
-- ~40 % montados; el resto a pie con la montura atada al mercenario.
+- ~25 % de los mercenarios del campamento reciben montura; ~40 % de esos empiezan montados, el resto a pie con correa.
 - Al contratar, el vínculo persiste.
+
+**Patrullas salvajes (spawn natural)**
+- Grupos de 1–4 mercenarios en el mundo.
+- ~22 % de grupos: líder Veterano/Guardián ancestral montado + 1–3 acompañantes de rango menor a pie.
+- Los acompañantes siguen al líder mientras patrullan.
 
 **Ritmo montado**
 | Situación | Velocidad (pathfinding) |
@@ -160,10 +165,28 @@ El mercenario **nunca** targetea a su dueño actual.
 
 ### Mundo
 - Spawn en aldeas y **campamentos de mercenarios** (worldgen).
+- Grupos salvajes de 1–4 mercenarios (configurable en `emerald_warriors.json`).
 - Persistencia anti-despawn.
 - Curación lenta cerca de fogatas en NEUTRAL.
 
-## Comandos útiles (QA)
+### Configuración
+Archivo `config/emerald_warriors.json` (se crea al primer arranque):
+
+| Opción | Descripción |
+|--------|-------------|
+| `toggles.camps` | Activa campamentos en worldgen |
+| `toggles.solitarySpawns` | Spawn natural de grupos salvajes |
+| `camp.rarityChance` | 1 de cada N chunks intenta generar campamento |
+| `solitarySpawn.weight` | Peso del spawn natural |
+| `solitarySpawn.maxGroup` | Tamaño máximo de grupo (por defecto 4) |
+
+## Comandos (operador)
+
+| Comando | Descripción |
+|---------|-------------|
+| `/mercenary addexp <cantidad>` | Añade XP a tus mercenarios contratados en 10 bloques |
+
+## Comandos útiles (QA / NBT)
 
 > `mod_id`: `emerald_warriors`
 
@@ -185,6 +208,7 @@ El mercenario **nunca** targetea a su dueño actual.
 ```
 emeraldwarriors/
 ├── entity/          # EmeraldMercenaryEntity + AI goals
+│   └── spawn/       # Grupos salvajes y patrullas montadas
 ├── client/          # Render, modelos, GUI
 ├── horn/            # Cuerno y grupos
 ├── spyglass/        # Catalejo y comandos tácticos
@@ -206,4 +230,4 @@ CC0-1.0 — ver archivo `LICENSE`.
 
 ---
 
-**Estado:** v1.0.0 — catalejo táctico y monturas v3.1 integrados en `main` (desarrollo activo).
+**Estado:** v1.0.0 — monturas multi-tipo (v3.1), patrullas salvajes montadas y spawn en grupos integrados en `main`.
