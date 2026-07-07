@@ -83,14 +83,38 @@ public final class SpyglassCommandHandler {
             return;
         }
 
-        SpyglassNetworking.sendMarkGlow(player, target.getUUID());
-
         List<EmeraldMercenaryEntity> mercs = findLinkedMercenariesInRange(player, spyglass);
         if (mercs.isEmpty()) {
             player.displayClientMessage(Component.translatable("emerald_warriors.spyglass.none_linked")
                     .withStyle(ChatFormatting.GRAY), true);
             return;
         }
+
+        UUID targetUuid = target.getUUID();
+        boolean attackingThisTarget = mercs.stream().anyMatch(m -> m.isTacticalAttackOn(targetUuid));
+        if (attackingThisTarget) {
+            int cancelled = 0;
+            ServerLevel sl = player.level() instanceof ServerLevel serverLevel ? serverLevel : null;
+            for (EmeraldMercenaryEntity merc : mercs) {
+                if (merc.cancelTacticalAttackIfTarget(targetUuid)) {
+                    cancelled++;
+                    if (sl != null) {
+                        sl.sendParticles(ParticleTypes.SMOKE,
+                                merc.getX(), merc.getY() + 1.0, merc.getZ(), 4, 0.2, 0.3, 0.2, 0.02);
+                    }
+                }
+            }
+            if (cancelled > 0) {
+                SpyglassNetworking.sendClearMarkGlow(player, targetUuid);
+                Component targetName = target.getDisplayName();
+                player.displayClientMessage(Component.translatable("emerald_warriors.spyglass.attack_cancelled",
+                                MercenaryTranslations.mercenaries(cancelled), targetName)
+                        .withStyle(ChatFormatting.GRAY), true);
+            }
+            return;
+        }
+
+        SpyglassNetworking.sendMarkGlow(player, targetUuid);
 
         int commanded = 0;
         MercenaryOrder order = SpyglassGroupManager.getOrder(spyglass);

@@ -33,6 +33,10 @@ public record SpyglassMarkGlowPayload(UUID entityUuid, int durationTicks) implem
         return new SpyglassMarkGlowPayload(entityUuid, DEFAULT_DURATION_TICKS);
     }
 
+    public static SpyglassMarkGlowPayload clear(UUID entityUuid) {
+        return new SpyglassMarkGlowPayload(entityUuid, 0);
+    }
+
     @Override
     public CustomPacketPayload.Type<SpyglassMarkGlowPayload> type() {
         return TYPE;

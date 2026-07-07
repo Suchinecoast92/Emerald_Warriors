@@ -18,8 +18,10 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.tags.ItemTags;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.HumanoidArm;
 import net.minecraft.world.entity.Pose;
+import net.minecraft.world.entity.animal.equine.AbstractHorse;
 import net.minecraft.world.item.CrossbowItem;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -63,6 +65,7 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
         public Identifier texture = FALLBACK_TEXTURE;
         public boolean slim = false;
         public boolean contractAdmiring = false;
+        public boolean ridingHorse = false;
     }
 
     @Override
@@ -95,14 +98,23 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
 
         super.extractRenderState(entity, state, partialTick);
 
-        // Animación de nado: cuando está en agua y moviéndose, usar pose SWIMMING
-        if (entity.isInWater() && !entity.isPassenger()) {
+        state.ridingHorse = entity.isPassenger() && entity.getVehicle() instanceof AbstractHorse;
+        if (state.ridingHorse && entity.getVehicle() instanceof AbstractHorse horse) {
+            state.pose = Pose.SITTING;
+            float bodyYaw = Mth.rotLerp(partialTick, horse.yRotO, horse.getYRot());
+            float headYaw = Mth.rotLerp(partialTick, entity.yHeadRotO, entity.yHeadRot);
+            state.bodyRot = bodyYaw;
+            // yRot = relativeHeadYaw (no yaw absoluto de cabeza).
+            state.yRot = EmeraldMercenaryEntity.mountedRelativeHeadYaw(bodyYaw, headYaw);
+            float pitch = Mth.lerp(partialTick, entity.xRotO, entity.getXRot());
+            state.xRot = Mth.clamp(pitch, -EmeraldMercenaryEntity.MOUNTED_HEAD_PITCH_LIMIT, EmeraldMercenaryEntity.MOUNTED_HEAD_PITCH_LIMIT);
+        } else if (entity.isInWater() && !entity.isPassenger()) {
             Vec3 motion = entity.getDeltaMovement();
             boolean isMoving = motion.lengthSqr() > 0.001D;
             if (isMoving) {
                 state.pose = Pose.SWIMMING;
             }
-        } else {
+        } else if (!state.ridingHorse) {
             state.pose = entity.getPose();
         }
 
@@ -188,10 +200,12 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
 
     @Override
     public Vec3 getRenderOffset(MercenaryRenderState state) {
-        // Bajar ligeramente el modelo para que la altura visual coincida con la del jugador vanilla
         Vec3 base = super.getRenderOffset(state);
         if (state.pose == Pose.SLEEPING) {
             return base.add(0.0D, 0.125D, 0.0D);
+        }
+        if (state.ridingHorse) {
+            return base.add(0.0D, 0.05D, 0.0D);
         }
         return base.add(0.0D, -0.1D, 0.0D);
     }

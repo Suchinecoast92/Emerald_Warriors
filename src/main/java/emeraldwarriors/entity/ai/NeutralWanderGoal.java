@@ -97,8 +97,9 @@ public class NeutralWanderGoal extends Goal {
                 continue;  // Saltar puntos en agua
             }
 
-            if (this.mercenary.getNavigation().moveTo(
-                    ground.getX() + 0.5, ground.getY(), ground.getZ() + 0.5, this.speedModifier)) {
+            if (this.mercenary.getEffectiveNavigation().moveTo(
+                    ground.getX() + 0.5, ground.getY(), ground.getZ() + 0.5,
+                    this.mercenary.resolveNavigationSpeed(this.speedModifier))) {
                 return;
             }
         }

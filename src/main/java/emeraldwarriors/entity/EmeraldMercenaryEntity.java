@@ -23,8 +23,11 @@ import emeraldwarriors.entity.ai.TacticalAttackTargetGoal;
 import emeraldwarriors.entity.ai.TacticalHoldGoal;
 import emeraldwarriors.entity.ai.UseHealingItemGoal;
 import emeraldwarriors.entity.ai.MercenarySleepGoal;
+import emeraldwarriors.entity.ai.MercenaryWildMountGoal;
 import emeraldwarriors.inventory.MercenaryInventory;
 import emeraldwarriors.inventory.MercenaryMenu;
+import emeraldwarriors.mount.MercenaryMountHelper;
+import emeraldwarriors.mount.MercenaryMountBehavior;
 import emeraldwarriors.mercenary.MercenaryOrder;
 import emeraldwarriors.mercenary.MercenaryRank;
 import emeraldwarriors.mercenary.MercenaryTranslations;
@@ -47,6 +50,7 @@ import net.minecraft.world.DifficultyInstance;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.MenuProvider;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
@@ -69,7 +73,9 @@ import net.minecraft.world.entity.ai.goal.target.NearestAttackableTargetGoal;
 import net.minecraft.world.entity.monster.CrossbowAttackMob;
 import net.minecraft.world.entity.monster.Monster;
 import net.minecraft.world.entity.monster.RangedAttackMob;
+import net.minecraft.world.entity.animal.equine.AbstractHorse;
 import net.minecraft.world.entity.animal.golem.IronGolem;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.npc.villager.AbstractVillager;
 import net.minecraft.world.entity.raid.Raider;
 import net.minecraft.world.entity.player.Inventory;
@@ -90,6 +96,7 @@ import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
+import net.minecraft.util.Mth;
 import net.minecraft.tags.TagKey;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -140,6 +147,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private static final int SLEEP_HEAL_INTERVAL_TICKS = 100;
     private static final float SLEEP_HEAL_AMOUNT = 1.0F;
 
+    /** Giro máximo de cabeza montado (respecto al cuerpo / dirección del caballo). */
+    public static final float MOUNTED_HEAD_YAW_LIMIT = 55.0F;
+    public static final float MOUNTED_HEAD_PITCH_LIMIT = 40.0F;
+
     private static final EntityDataAccessor<Integer> DATA_RANK_ORDINAL = SynchedEntityData.defineId(EmeraldMercenaryEntity.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Integer> DATA_ORDER_ORDINAL = SynchedEntityData.defineId(EmeraldMercenaryEntity.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Boolean> DATA_IS_CHARGING_CROSSBOW = SynchedEntityData.defineId(EmeraldMercenaryEntity.class, EntityDataSerializers.BOOLEAN);
@@ -161,6 +172,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private BlockPos tacticalHoldPos;
     private boolean tacticalHoldActive;
     private int tacticalAttackTargetId = -1;
+    private UUID tacticalAttackTargetUuid;
     private boolean tacticalAttackActive;
     private EmeraldNearestAttackableTargetGoal nearestAttackableGoal;
 
@@ -219,6 +231,13 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private BlockPos patrolCenter;
     private BlockPos boundBedPos;
     private BlockPos reservedBedPos;
+
+    // Caballo vinculado (monturas v3)
+    private UUID boundHorseUuid;
+    private UUID pendingHorseBindPlayerUuid;
+    private int pendingHorseBindTicks;
+    private int mountLeadCooldown;
+    private static final int HORSE_BIND_TIMEOUT_TICKS = 200;
 
     // Progreso de experiencia del mercenario (para futura progresión de rango)
     private int experience;
@@ -627,9 +646,29 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         }
         this.clearTacticalHold();
         this.tacticalAttackTargetId = target.getId();
+        this.tacticalAttackTargetUuid = target.getUUID();
         this.tacticalAttackActive = true;
         this.setTarget(target);
         this.alertBrotherhood(target);
+        return true;
+    }
+
+    public boolean isTacticalAttackOn(UUID targetUuid) {
+        return this.tacticalAttackActive
+                && targetUuid != null
+                && targetUuid.equals(this.tacticalAttackTargetUuid);
+    }
+
+    public boolean isTacticalAttackTarget(LivingEntity target) {
+        return target != null && this.isTacticalAttackOn(target.getUUID());
+    }
+
+    public boolean cancelTacticalAttackIfTarget(UUID targetUuid) {
+        if (!this.isTacticalAttackOn(targetUuid)) {
+            return false;
+        }
+        this.clearTacticalAttack();
+        this.getNavigation().stop();
         return true;
     }
 
@@ -645,9 +684,13 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     public void clearTacticalAttack() {
         int previousTargetId = this.tacticalAttackTargetId;
+        UUID previousTargetUuid = this.tacticalAttackTargetUuid;
         this.tacticalAttackActive = false;
         this.tacticalAttackTargetId = -1;
-        if (this.getTarget() != null && this.getTarget().getId() == previousTargetId) {
+        this.tacticalAttackTargetUuid = null;
+        LivingEntity current = this.getTarget();
+        if (current != null && (current.getId() == previousTargetId
+                || (previousTargetUuid != null && current.getUUID().equals(previousTargetUuid)))) {
             this.setTarget(null);
         }
     }
@@ -660,19 +703,40 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         return this.tacticalAttackActive;
     }
 
+    /** Spyglass tactical commands bypass FOLLOW chase-distance limits from the owner anchor. */
+    public boolean shouldIgnoreChaseAnchor() {
+        return this.tacticalAttackActive || this.tacticalHoldActive;
+    }
+
     public BlockPos getTacticalHoldPos() {
         return this.tacticalHoldPos;
     }
 
     public LivingEntity getTacticalAttackTarget() {
-        if (!this.tacticalAttackActive || this.tacticalAttackTargetId < 0) {
+        if (!this.tacticalAttackActive || this.tacticalAttackTargetUuid == null) {
             return null;
         }
         if (!(this.level() instanceof ServerLevel sl)) {
             return null;
         }
-        var entity = sl.getEntity(this.tacticalAttackTargetId);
-        return entity instanceof LivingEntity living ? living : null;
+        if (this.tacticalAttackTargetId >= 0) {
+            var byId = sl.getEntity(this.tacticalAttackTargetId);
+            if (byId instanceof LivingEntity living && living.isAlive()
+                    && living.getUUID().equals(this.tacticalAttackTargetUuid)) {
+                return living;
+            }
+        }
+        double searchRadius = emeraldwarriors.spyglass.SpyglassCommandHandler.COMMAND_RADIUS + 16.0D;
+        var found = sl.getEntitiesOfClass(
+                LivingEntity.class,
+                this.getBoundingBox().inflate(searchRadius),
+                e -> e.isAlive() && e.getUUID().equals(this.tacticalAttackTargetUuid));
+        if (found.isEmpty()) {
+            return null;
+        }
+        LivingEntity living = found.getFirst();
+        this.tacticalAttackTargetId = living.getId();
+        return living;
     }
 
     public boolean canObeyTacticalCommands() {
@@ -690,20 +754,14 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                     this.tacticalHoldPos.getX() + 0.5, this.tacticalHoldPos.getY(), this.tacticalHoldPos.getZ() + 0.5);
             if (dist <= 2.25D && (order == MercenaryOrder.GUARD || order == MercenaryOrder.PATROL)) {
                 this.clearTacticalHold();
-            } else if (order == MercenaryOrder.FOLLOW) {
-                LivingEntity owner = this.getOwner();
-                if (owner != null) {
-                    double leash = this.getRank().getMaxChaseFromAnchor() * 1.5D;
-                    if (this.distanceToSqr(owner) > leash * leash) {
-                        this.clearTacticalHold();
-                    }
-                }
             }
         }
         if (this.tacticalAttackActive) {
             LivingEntity target = this.getTacticalAttackTarget();
             if (target == null || !target.isAlive()) {
                 this.clearTacticalAttack();
+            } else if (this.getTarget() != target) {
+                this.setTarget(target);
             }
         }
         if (!this.canObeyTacticalCommands()) {
@@ -1213,6 +1271,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             output.putInt("PatrolCenterY", this.patrolCenter.getY());
             output.putInt("PatrolCenterZ", this.patrolCenter.getZ());
         }
+        if (this.boundHorseUuid != null) {
+            output.putString("BoundHorse", this.boundHorseUuid.toString());
+        }
         if (this.boundBedPos != null) {
             output.putInt("BoundBedX", this.boundBedPos.getX());
             output.putInt("BoundBedY", this.boundBedPos.getY());
@@ -1370,6 +1431,14 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         if (px != Integer.MIN_VALUE && py != Integer.MIN_VALUE && pz != Integer.MIN_VALUE) {
             this.patrolCenter = new BlockPos(px, py, pz);
         }
+
+        input.getString("BoundHorse").ifPresent(value -> {
+            try {
+                this.boundHorseUuid = UUID.fromString(value);
+            } catch (IllegalArgumentException ignored) {
+                this.boundHorseUuid = null;
+            }
+        });
 
         int bx = input.getIntOr("BoundBedX", Integer.MIN_VALUE);
         int by = input.getIntOr("BoundBedY", Integer.MIN_VALUE);
@@ -1648,6 +1717,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.bowAttackGoal      = new EmeraldBowAttackGoal(this, 0.9D, 20, 15.0F);
         this.crossbowAttackGoal = new EmeraldCrossbowAttackGoal(this, 0.9D, 30, 15.0F);
 
+        // Prioridad 3: Montar caballo vinculado (salvajes sin dueño)
+        this.goalSelector.addGoal(3, new MercenaryWildMountGoal(this));
+
         // Prioridad 3: Movimiento según orden
         this.goalSelector.addGoal(3, new EmeraldFollowOwnerGoal(this, 1.0D, 5.0F, 2.0F));
         this.goalSelector.addGoal(3, new GuardPositionGoal(this, 1.0D, 8.0D));
@@ -1766,6 +1838,166 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     public LivingEntity getOwner() {
         return this.ownerUuid != null ? this.level().getPlayerByUUID(this.ownerUuid) : null;
+    }
+
+    // ── Mount system (v3) ───────────────────────────────────────────────────
+
+    public UUID getBoundHorseUuid() {
+        return this.boundHorseUuid;
+    }
+
+    public boolean hasBoundHorse() {
+        return this.boundHorseUuid != null;
+    }
+
+    public AbstractHorse findBoundHorse() {
+        if (this.boundHorseUuid == null || !(this.level() instanceof ServerLevel sl)) {
+            return null;
+        }
+        List<AbstractHorse> horses = sl.getEntitiesOfClass(
+                AbstractHorse.class,
+                this.getBoundingBox().inflate(MercenaryMountHelper.MOUNT_APPROACH_RANGE),
+                h -> h.isAlive() && h.getUUID().equals(this.boundHorseUuid)
+        );
+        return horses.isEmpty() ? null : horses.getFirst();
+    }
+
+    public void bindToHorse(AbstractHorse horse) {
+        if (horse == null) {
+            return;
+        }
+        this.boundHorseUuid = horse.getUUID();
+        if (this.isPassenger() && this.getVehicle() != horse) {
+            this.stopRiding();
+        }
+    }
+
+    public void clearHorseBinding() {
+        AbstractHorse horse = this.findBoundHorse();
+        MercenaryMountBehavior.releaseHorseLead(this, horse);
+        this.boundHorseUuid = null;
+        this.clearHorseBindSelection();
+        if (this.isPassenger() && this.getVehicle() instanceof AbstractHorse) {
+            this.stopRiding();
+        }
+    }
+
+    public int getMountLeadCooldown() {
+        return this.mountLeadCooldown;
+    }
+
+    public void setMountLeadCooldown(int ticks) {
+        this.mountLeadCooldown = Math.max(0, ticks);
+    }
+
+    public boolean isAwaitingHorseBindFrom(Player player) {
+        return this.pendingHorseBindPlayerUuid != null
+                && player.getUUID().equals(this.pendingHorseBindPlayerUuid)
+                && this.pendingHorseBindTicks > 0;
+    }
+
+    public void startHorseBindSelection(Player player) {
+        this.pendingHorseBindPlayerUuid = player.getUUID();
+        this.pendingHorseBindTicks = HORSE_BIND_TIMEOUT_TICKS;
+    }
+
+    public void clearHorseBindSelection() {
+        this.pendingHorseBindPlayerUuid = null;
+        this.pendingHorseBindTicks = 0;
+    }
+
+    public boolean isSpearInMainHand() {
+        return isSpearItem(this.getMainHandItem().getItem());
+    }
+
+    public PathNavigation getEffectiveNavigation() {
+        if (this.isPassenger() && this.getVehicle() instanceof Mob vehicle) {
+            return vehicle.getNavigation();
+        }
+        return this.getNavigation();
+    }
+
+    public double resolveNavigationSpeed(double goalSpeed) {
+        return MercenaryMountBehavior.resolveNavigationSpeed(this, goalSpeed);
+    }
+
+    public boolean tryMountBoundHorse() {
+        if (this.isPassenger()) {
+            return true;
+        }
+        AbstractHorse horse = this.findBoundHorse();
+        if (horse == null || !horse.isAlive() || !horse.isSaddled()) {
+            return false;
+        }
+        if (this.distanceToSqr(horse) > MercenaryMountBehavior.MOUNT_BOARD_RANGE_SQR) {
+            return false;
+        }
+        if (!horse.getPassengers().isEmpty()) {
+            return false;
+        }
+        MercenaryMountBehavior.releaseHorseLead(this, horse);
+        return this.startRiding(horse);
+    }
+
+    private void tickMountState() {
+        if (this.isLeashed()) {
+            this.removeLeash();
+        }
+
+        if (this.mountLeadCooldown > 0) {
+            this.mountLeadCooldown--;
+        }
+
+        if (this.pendingHorseBindTicks > 0) {
+            this.pendingHorseBindTicks--;
+            if (this.pendingHorseBindTicks <= 0) {
+                this.clearHorseBindSelection();
+            }
+        }
+
+        if (this.ownerUuid != null && !this.isContractAdmiring()) {
+            MercenaryMountBehavior.tickOwned(this);
+        } else {
+            AbstractHorse horse = this.findBoundHorse();
+            if (this.boundHorseUuid != null && horse == null) {
+                this.clearHorseBinding();
+            }
+        }
+    }
+
+    private boolean handleMountLeadInteract(Player player, ItemStack stack) {
+        if (this.ownerUuid == null || !this.isOwnerPlayer(player)) {
+            player.displayClientMessage(
+                    Component.translatable("emerald_warriors.mount.not_owner").withStyle(ChatFormatting.RED),
+                    false
+            );
+            return true;
+        }
+
+        if (this.boundHorseUuid != null) {
+            AbstractHorse horse = this.findBoundHorse();
+            this.clearHorseBinding();
+            player.displayClientMessage(
+                    Component.translatable(
+                            "emerald_warriors.mount.unbound",
+                            horse != null ? horse.getName() : Component.translatable("entity.minecraft.horse")
+                    ).withStyle(ChatFormatting.YELLOW),
+                    false
+            );
+            return true;
+        }
+
+        this.startHorseBindSelection(player);
+        player.displayClientMessage(
+                Component.translatable("emerald_warriors.mount.await_horse").withStyle(ChatFormatting.YELLOW),
+                false
+        );
+        return true;
+    }
+
+    @Override
+    public boolean canBeLeashed() {
+        return false;
     }
 
     public int getOwnerLastHurtByMobTimestampBaseline() {
@@ -1893,7 +2125,11 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.updateOwnerCombatBaselines();
     }
 
-    private boolean isOwnerPlayer(Player player) {
+    public void setPatrolCenter(BlockPos center) {
+        this.patrolCenter = center;
+    }
+
+    public boolean isOwnerPlayer(Player player) {
         if (player == null) {
             return false;
         }
@@ -2380,10 +2616,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     }
 
     private boolean isTacticalDirectedTarget(LivingEntity target) {
-        if (!this.tacticalAttackActive || target == null) {
+        if (!this.tacticalAttackActive || target == null || this.tacticalAttackTargetUuid == null) {
             return false;
         }
-        return target.getId() == this.tacticalAttackTargetId;
+        return target.getUUID().equals(this.tacticalAttackTargetUuid);
     }
 
     private boolean isOwnerDefenseTarget(LivingEntity target) {
@@ -2613,11 +2849,67 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     @Override
     public Vec3 getVehicleAttachmentPoint(net.minecraft.world.entity.Entity vehicle) {
+        Vec3 base = super.getVehicleAttachmentPoint(vehicle);
+        if (vehicle instanceof AbstractHorse) {
+            // Subir el punto de anclaje baja al jinete humanoide sobre la silla (igual que bote/minecart).
+            return base.add(0.0D, 0.58D, 0.0D);
+        }
         // Ajustar el punto de anclaje al vehículo para que el cuerpo quede más bajo
         // (butt apoyado en el asiento del bote/minecart en vez de flotar ligeramente).
-        Vec3 base = super.getVehicleAttachmentPoint(vehicle);
-        // Subimos el attachment ~0.55 bloques, lo que baja el modelo respecto al asiento.
         return base.add(0.0D, 0.55D, 0.0D);
+    }
+
+    @Override
+    public int getMaxHeadYRot() {
+        if (this.getVehicle() instanceof AbstractHorse) {
+            return (int) MOUNTED_HEAD_YAW_LIMIT;
+        }
+        return super.getMaxHeadYRot();
+    }
+
+    @Override
+    public int getMaxHeadXRot() {
+        if (this.getVehicle() instanceof AbstractHorse) {
+            return (int) MOUNTED_HEAD_PITCH_LIMIT;
+        }
+        return super.getMaxHeadXRot();
+    }
+
+    private void syncMountedRotation(AbstractHorse horse) {
+        float bodyYaw = horse.getYRot();
+        this.setYRot(bodyYaw);
+        this.yBodyRot = bodyYaw;
+        this.yHeadRot = clampMountedHeadYaw(bodyYaw, this.yHeadRot);
+        this.setXRot(Mth.clamp(this.getXRot(), -MOUNTED_HEAD_PITCH_LIMIT, MOUNTED_HEAD_PITCH_LIMIT));
+    }
+
+    public static float clampMountedHeadYaw(float bodyYaw, float headYaw) {
+        float delta = Mth.wrapDegrees(headYaw - bodyYaw);
+        delta = Mth.clamp(delta, -MOUNTED_HEAD_YAW_LIMIT, MOUNTED_HEAD_YAW_LIMIT);
+        return bodyYaw + delta;
+    }
+
+    /** Cabeza relativa al cuerpo (lo que espera LivingEntityRenderState.yRot). */
+    public static float mountedRelativeHeadYaw(float bodyYaw, float headYaw) {
+        return Mth.wrapDegrees(clampMountedHeadYaw(bodyYaw, headYaw) - bodyYaw);
+    }
+
+    @Override
+    public void rideTick() {
+        super.rideTick();
+        if (this.getVehicle() instanceof AbstractHorse horse) {
+            MercenaryMountBehavior.applyMountedPace(this, horse);
+            this.syncMountedRotation(horse);
+        }
+    }
+
+    @Override
+    public void stopRiding() {
+        Entity vehicle = this.getVehicle();
+        super.stopRiding();
+        if (vehicle instanceof AbstractHorse horse) {
+            horse.setSprinting(false);
+        }
     }
 
     // ── CrossbowAttackMob interface ──────────────────────────────────────────
@@ -2997,6 +3289,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
             this.tickTacticalState();
 
+            if (this.tickCount % 5 == 0) {
+                this.tickMountState();
+            }
+
             LivingEntity currentTarget = this.getTarget();
             if (currentTarget instanceof AbstractVillager || currentTarget instanceof IronGolem) {
                 this.setTarget(null);
@@ -3122,7 +3418,11 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                     for (ServerLevel otherLevel : serverLvl.getServer().getAllLevels()) {
                         Player ownerElsewhere = otherLevel.getPlayerByUUID(this.ownerUuid);
                         if (otherLevel != serverLvl && ownerElsewhere != null) {
-                            if (this.getCurrentOrder() == MercenaryOrder.FOLLOW && !this.systemForcedNone) {
+                            if (this.getCurrentOrder() == MercenaryOrder.FOLLOW
+                                    && !this.systemForcedNone
+                                    && !this.isTacticalAttackActive()
+                                    && !this.isTacticalHoldActive()) {
+                                MercenaryMountBehavior.prepareForTeleport(this);
                                 this.teleportTo(otherLevel,
                                         ownerElsewhere.getX(), ownerElsewhere.getY(), ownerElsewhere.getZ(),
                                         java.util.Set.of(), ownerElsewhere.getYRot(), 0f, false);
@@ -3133,8 +3433,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                     }
                 }
 
-                // systemForcedNone only applies to FOLLOW order
-                if (this.getCurrentOrder() == MercenaryOrder.FOLLOW) {
+                // systemForcedNone only applies to FOLLOW order (not during spyglass tactical commands)
+                if (this.getCurrentOrder() == MercenaryOrder.FOLLOW
+                        && !this.isTacticalAttackActive()
+                        && !this.isTacticalHoldActive()) {
                     if (!ownerOnlineHere) {
                         // Owner offline: pause following
                         if (!this.systemForcedNone) {
@@ -3340,6 +3642,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             if (this.tickCount % 20 == 0) {
                 this.refreshCombatRoleAndGoals();
             }
+        }
+
+        if (this.getVehicle() instanceof AbstractHorse horse) {
+            this.syncMountedRotation(horse);
         }
     }
 
@@ -4562,6 +4868,14 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                         }
                     }
                 }
+            }
+            return this.level().isClientSide() ? InteractionResult.SUCCESS : InteractionResult.CONSUME;
+        }
+
+        // Shift + clic derecho con correa → vincular/desvincular caballo
+        if (isSneaking && hand == InteractionHand.MAIN_HAND && stack.is(Items.LEAD)) {
+            if (!this.level().isClientSide()) {
+                this.handleMountLeadInteract(player, stack);
             }
             return this.level().isClientSide() ? InteractionResult.SUCCESS : InteractionResult.CONSUME;
         }

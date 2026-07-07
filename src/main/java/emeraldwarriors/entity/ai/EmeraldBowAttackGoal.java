@@ -120,7 +120,7 @@ public class EmeraldBowAttackGoal extends Goal {
 
         if (this.isTooFarFromAnchor()) {
             this.mob.setTarget(null);
-            this.mob.getNavigation().stop();
+            this.mob.getEffectiveNavigation().stop();
             this.mob.getMoveControl().strafe(0.0F, 0.0F);
             if (this.mob.isUsingItem()) {
                 this.mob.stopUsingItem();
@@ -152,7 +152,7 @@ public class EmeraldBowAttackGoal extends Goal {
         boolean holdHighGround = CombatTactics.canHoldGroundAndShoot(this.mob, target, distSqr, this.attackRadiusSqr);
 
         if (holdHighGround) {
-            this.mob.getNavigation().stop();
+            this.mob.getEffectiveNavigation().stop();
             this.strafeTime = 0;
             this.mob.getMoveControl().strafe(0.0F, 0.0F);
         } else if (!canSee) {
@@ -168,7 +168,7 @@ public class EmeraldBowAttackGoal extends Goal {
             this.mob.getMoveControl().strafe(0.0F, 0.0F);
         } else {
             // Dentro de rango y con visión: detener el pathing y hacer un leve strafe tipo vanilla
-            this.mob.getNavigation().stop();
+            this.mob.getEffectiveNavigation().stop();
             
             // SENTINEL+ Tactical Height Advantage - maintain high ground with ranged weapons
             if (this.shouldMaintainHeightAdvantage(target)) {
@@ -310,7 +310,7 @@ public class EmeraldBowAttackGoal extends Goal {
         double z = target.getZ() + Math.sin(angleRad) * preferredRadius;
 
         double y = CombatTactics.getRangedNavigationY(this.mob, target);
-        boolean moved = this.mob.getNavigation().moveTo(x, y, z, this.getChaseSpeed(target));
+        boolean moved = this.mob.getEffectiveNavigation().moveTo(x, y, z, this.getChaseSpeed(target));
         if (moved) {
             this.repositionCooldown = 10 + this.mob.getRandom().nextInt(10);
         }
@@ -322,11 +322,11 @@ public class EmeraldBowAttackGoal extends Goal {
         if (target instanceof Player) {
             speed = Math.max(speed, 1.1D);
         }
-        return speed;
+        return this.mob.resolveNavigationSpeed(speed);
     }
 
     private boolean isTooFarFromAnchor() {
-        if (this.mob.isInDisciplineAggro()) {
+        if (this.mob.shouldIgnoreChaseAnchor() || this.mob.isInDisciplineAggro()) {
             return false;
         }
         int maxChase = this.mob.getRank().getMaxChaseFromAnchor();

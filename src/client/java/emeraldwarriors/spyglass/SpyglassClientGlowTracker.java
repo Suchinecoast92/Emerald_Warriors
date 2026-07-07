@@ -18,12 +18,20 @@ public final class SpyglassClientGlowTracker {
     }
 
     public static void mark(UUID entityUuid, int durationTicks) {
+        if (durationTicks <= 0) {
+            clear(entityUuid);
+            return;
+        }
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) {
             return;
         }
-        long until = mc.level.getGameTime() + Math.max(1, durationTicks);
+        long until = mc.level.getGameTime() + durationTicks;
         GLOW_UNTIL_GAME_TIME.put(entityUuid, until);
+    }
+
+    public static void clear(UUID entityUuid) {
+        GLOW_UNTIL_GAME_TIME.remove(entityUuid);
     }
 
     public static boolean shouldGlow(UUID entityUuid) {

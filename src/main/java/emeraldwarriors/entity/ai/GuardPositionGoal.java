@@ -56,7 +56,7 @@ public class GuardPositionGoal extends Goal {
             return false;
         }
         double distSqr = this.mercenary.distanceToSqr(guard.getX() + 0.5, guard.getY(), guard.getZ() + 0.5);
-        return distSqr > 1.5 && !this.mercenary.getNavigation().isDone();
+        return distSqr > 1.5 && !this.mercenary.getEffectiveNavigation().isDone();
     }
 
     @Override
@@ -64,7 +64,9 @@ public class GuardPositionGoal extends Goal {
         BlockPos guard = this.mercenary.getGuardPos();
         if (guard != null) {
             double returnY = CombatTactics.getGuardReturnY(this.mercenary, guard);
-            this.mercenary.getNavigation().moveTo(guard.getX() + 0.5, returnY, guard.getZ() + 0.5, this.speedModifier);
+            this.mercenary.getEffectiveNavigation().moveTo(
+                    guard.getX() + 0.5, returnY, guard.getZ() + 0.5,
+                    this.mercenary.resolveNavigationSpeed(this.speedModifier));
         }
     }
 
@@ -75,13 +77,15 @@ public class GuardPositionGoal extends Goal {
             return;
         }
         double returnY = CombatTactics.getGuardReturnY(this.mercenary, guard);
-        if (this.mercenary.getNavigation().isDone()) {
-            this.mercenary.getNavigation().moveTo(guard.getX() + 0.5, returnY, guard.getZ() + 0.5, this.speedModifier);
+        if (this.mercenary.getEffectiveNavigation().isDone()) {
+            this.mercenary.getEffectiveNavigation().moveTo(
+                    guard.getX() + 0.5, returnY, guard.getZ() + 0.5,
+                    this.mercenary.resolveNavigationSpeed(this.speedModifier));
         }
     }
 
     @Override
     public void stop() {
-        this.mercenary.getNavigation().stop();
+        this.mercenary.getEffectiveNavigation().stop();
     }
 }

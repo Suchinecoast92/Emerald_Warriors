@@ -3,7 +3,10 @@ package emeraldwarriors.worldgen;
 import com.mojang.serialization.Codec;
 import emeraldwarriors.Emerald_Warriors;
 import emeraldwarriors.config.ModConfig;
+import emeraldwarriors.entity.EmeraldMercenaryEntity;
 import emeraldwarriors.entity.ModEntities;
+import emeraldwarriors.mount.MercenaryMountHelper;
+import net.minecraft.server.level.ServerLevel;
 import net.fabricmc.fabric.api.tag.convention.v2.ConventionalBiomeTags;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.BlockPos;
@@ -115,10 +118,11 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
 
     private static void trySpawnCampMercenaries(WorldGenLevel level, BlockPos center, RandomSource random) {
         int count = 1 + (random.nextFloat() < 0.35F ? 1 : 0);
+        List<EmeraldMercenaryEntity> spawned = new ArrayList<>();
 
         for (int i = 0; i < count; i++) {
             // Prefer spawning close to the campfire (center)
-            boolean spawned = false;
+            boolean spawnedOne = false;
             for (int attempts = 0; attempts < 40; attempts++) {
                 int dx = random.nextInt(9) - 4;   // [-4..4]
                 int dz = random.nextInt(9) - 4;
@@ -139,13 +143,16 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
                     continue;
                 }
 
-                ModEntities.EMERALD_MERCENARY.spawn(level.getLevel(), surface, EntitySpawnReason.STRUCTURE);
-                spawned = true;
+                var entity = ModEntities.EMERALD_MERCENARY.spawn(level.getLevel(), surface, EntitySpawnReason.STRUCTURE);
+                if (entity instanceof EmeraldMercenaryEntity merc) {
+                    spawned.add(merc);
+                }
+                spawnedOne = true;
                 break;
             }
 
             // Fallback: if camp objects/terrain block close spawns, use the old wider area
-            if (!spawned) {
+            if (!spawnedOne) {
                 for (int attempts = 0; attempts < 30; attempts++) {
                     int dx = random.nextInt(11) - 5;
                     int dz = random.nextInt(11) - 5;
@@ -162,9 +169,18 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
                         continue;
                     }
 
-                    ModEntities.EMERALD_MERCENARY.spawn(level.getLevel(), surface, EntitySpawnReason.STRUCTURE);
+                    var entity = ModEntities.EMERALD_MERCENARY.spawn(level.getLevel(), surface, EntitySpawnReason.STRUCTURE);
+                    if (entity instanceof EmeraldMercenaryEntity merc) {
+                        spawned.add(merc);
+                    }
                     break;
                 }
+            }
+        }
+
+        if (level.getLevel() instanceof ServerLevel serverLevel) {
+            for (EmeraldMercenaryEntity merc : spawned) {
+                MercenaryMountHelper.setupWildCampMount(serverLevel, merc, center, random);
             }
         }
     }

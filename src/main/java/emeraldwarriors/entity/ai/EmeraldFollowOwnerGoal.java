@@ -37,7 +37,7 @@ public class EmeraldFollowOwnerGoal extends Goal {
         if (order != MercenaryOrder.FOLLOW) {
             return false;
         }
-        if (this.mercenary.isTacticalHoldActive()) {
+        if (this.mercenary.isTacticalHoldActive() || this.mercenary.isTacticalAttackActive()) {
             return false;
         }
         // Don't follow if the system paused movement (too-far or owner offline)
@@ -68,7 +68,7 @@ public class EmeraldFollowOwnerGoal extends Goal {
         if (order != MercenaryOrder.FOLLOW) {
             return false;
         }
-        if (this.mercenary.isTacticalHoldActive()) {
+        if (this.mercenary.isTacticalHoldActive() || this.mercenary.isTacticalAttackActive()) {
             return false;
         }
         // Stop following if system paused movement
@@ -108,12 +108,13 @@ public class EmeraldFollowOwnerGoal extends Goal {
         if (--this.timeToRecalcPath <= 0) {
             this.timeToRecalcPath = this.adjustedTickDelay(10);
 
-            if (!this.mercenary.isLeashed() && !this.mercenary.isPassenger()) {
-                double speed = this.speedModifier;
-                if (this.owner.isSprinting()) {
-                    speed = Math.max(speed, 1.2D);
+            if (!this.mercenary.isLeashed()) {
+                double speed = this.mercenary.resolveNavigationSpeed(this.speedModifier);
+                if (this.owner.isSprinting() && !(this.mercenary.isPassenger()
+                        && this.mercenary.getVehicle() instanceof net.minecraft.world.entity.animal.equine.AbstractHorse)) {
+                    speed = Math.max(speed, this.mercenary.resolveNavigationSpeed(1.2D));
                 }
-                this.navigation.moveTo(this.owner, speed);
+                this.mercenary.getEffectiveNavigation().moveTo(this.owner, speed);
             }
         }
     }

@@ -37,6 +37,10 @@ public final class SpyglassNetworking {
         ServerPlayNetworking.send(player, SpyglassMarkGlowPayload.of(entityUuid));
     }
 
+    public static void sendClearMarkGlow(ServerPlayer player, UUID entityUuid) {
+        ServerPlayNetworking.send(player, SpyglassMarkGlowPayload.clear(entityUuid));
+    }
+
     private static void handleTacticalCommand(ServerPlayer player, SpyglassTacticalCommandPayload payload) {
         ItemStack spyglass = resolveSpyglassStack(player);
         if (!SpyglassGroupManager.isSpyglass(spyglass)) {

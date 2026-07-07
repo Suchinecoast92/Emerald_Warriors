@@ -27,7 +27,6 @@ public class TacticalAttackTargetGoal extends TargetGoal {
         }
         LivingEntity target = this.mercenary.getTacticalAttackTarget();
         if (target == null || !target.isAlive()) {
-            this.mercenary.clearTacticalAttack();
             return false;
         }
         if (target == this.mercenary.getOwner()) {
@@ -44,7 +43,6 @@ public class TacticalAttackTargetGoal extends TargetGoal {
         }
         LivingEntity target = this.mercenary.getTacticalAttackTarget();
         if (target == null || !target.isAlive()) {
-            this.mercenary.clearTacticalAttack();
             return false;
         }
         this.tacticalTarget = target;

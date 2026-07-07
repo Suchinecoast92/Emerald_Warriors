@@ -6,6 +6,7 @@ import emeraldwarriors.entity.EmeraldMercenaryEntity;
 import emeraldwarriors.entity.ModEntities;
 import emeraldwarriors.entity.spawn.VillageMercenarySpawner;
 import emeraldwarriors.horn.MercenaryHornListener;
+import emeraldwarriors.mount.MercenaryMountListener;
 import emeraldwarriors.item.ModItems;
 import emeraldwarriors.menu.ModMenus;
 import emeraldwarriors.spyglass.MercenarySpyglassListener;
@@ -43,6 +44,7 @@ public class Emerald_Warriors implements ModInitializer {
 		ModItems.register();
 		ModMenus.register();
 		MercenaryHornListener.register();
+		MercenaryMountListener.register();
 		MercenarySpyglassListener.register();
 		SpyglassNetworking.registerServer();
 		ModWorldgen.register();

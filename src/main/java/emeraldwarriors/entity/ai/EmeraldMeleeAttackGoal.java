@@ -70,7 +70,7 @@ public class EmeraldMeleeAttackGoal extends Goal {
             }
         }
 
-        this.path = this.mob.getNavigation().createPath(target, 0);
+        this.path = this.mob.getEffectiveNavigation().createPath(target, 0);
         if (this.path != null) {
             return true;
         }
@@ -97,7 +97,7 @@ public class EmeraldMeleeAttackGoal extends Goal {
             }
         }
         if (!this.followingTargetEvenIfNotSeen) {
-            return !this.mob.getNavigation().isDone();
+            return !this.mob.getEffectiveNavigation().isDone();
         }
 
         // Límite de persecución: no alejarse demasiado del ancla
@@ -109,7 +109,7 @@ public class EmeraldMeleeAttackGoal extends Goal {
     }
 
     private boolean isTooFarFromAnchor() {
-        if (this.mob.isInDisciplineAggro()) {
+        if (this.mob.shouldIgnoreChaseAnchor() || this.mob.isInDisciplineAggro()) {
             return false;
         }
         int maxChase = this.mob.getRank().getMaxChaseFromAnchor();
@@ -155,7 +155,7 @@ public class EmeraldMeleeAttackGoal extends Goal {
     @Override
     public void start() {
         LivingEntity target = this.mob.getTarget();
-        this.mob.getNavigation().moveTo(this.path, target != null ? this.getChaseSpeed(target) : this.speedModifier);
+        this.mob.getEffectiveNavigation().moveTo(this.path, target != null ? this.getChaseSpeed(target) : this.mob.resolveNavigationSpeed(this.speedModifier));
         this.mob.setAggressive(true);
         this.ticksUntilNextPathRecalculation = 0;
         this.ticksUntilNextAttack = 0;
@@ -168,11 +168,12 @@ public class EmeraldMeleeAttackGoal extends Goal {
     @Override
     public void stop() {
         LivingEntity target = this.mob.getTarget();
-        if (!EntitySelector.NO_CREATIVE_OR_SPECTATOR.test(target)) {
+        if (!EntitySelector.NO_CREATIVE_OR_SPECTATOR.test(target)
+                && !this.mob.isTacticalAttackTarget(target)) {
             this.mob.setTarget(null);
         }
         this.mob.setAggressive(false);
-        this.mob.getNavigation().stop();
+        this.mob.getEffectiveNavigation().stop();
         this.shieldDropWindupTicks = 0;
         this.mob.getMoveControl().strafe(0.0F, 0.0F);
     }
@@ -194,7 +195,7 @@ public class EmeraldMeleeAttackGoal extends Goal {
 
         if (this.isTooFarFromAnchor()) {
             this.mob.setTarget(null);
-            this.mob.getNavigation().stop();
+            this.mob.getEffectiveNavigation().stop();
             return;
         }
 
@@ -230,21 +231,21 @@ public class EmeraldMeleeAttackGoal extends Goal {
             if (!movedWithOffset) {
                 double approachSpeed = chaseSpeed * (0.9D + this.mob.getRandom().nextDouble() * 0.25D);
                 if (CombatTactics.shouldPreserveHeightInGuard(this.mob, target)) {
-                    this.mob.getNavigation().moveTo(target.getX(), CombatTactics.getRangedNavigationY(this.mob, target),
+                    this.mob.getEffectiveNavigation().moveTo(target.getX(), CombatTactics.getRangedNavigationY(this.mob, target),
                             target.getZ(), approachSpeed);
-                } else if (!this.mob.getNavigation().moveTo(target, approachSpeed)) {
+                } else if (!this.mob.getEffectiveNavigation().moveTo(target, approachSpeed)) {
                     this.ticksUntilNextPathRecalculation += isPlayerTarget ? 2 : 15;
                 }
             }
             this.ticksUntilNextPathRecalculation = this.adjustedTickDelay(this.ticksUntilNextPathRecalculation);
         } else if (closeEnoughToCreeper) {
             // Ya estamos lo suficientemente cerca del creeper, dejar de acercarse
-            this.mob.getNavigation().stop();
+            this.mob.getEffectiveNavigation().stop();
         }
 
         this.ticksUntilNextAttack = Math.max(this.ticksUntilNextAttack - 1, 0);
 
-        if (!closeEnoughToCreeper && !this.isWithinAttackRange(target, attackReachSqr) && this.mob.getNavigation().isDone()) {
+        if (!closeEnoughToCreeper && !this.isWithinAttackRange(target, attackReachSqr) && this.mob.getEffectiveNavigation().isDone()) {
             CombatTactics.moveToTargetPreservingHeight(this.mob, target, chaseSpeed);
         }
 
@@ -320,7 +321,7 @@ public class EmeraldMeleeAttackGoal extends Goal {
                 ? CombatTactics.getRangedNavigationY(this.mob, target)
                 : target.getY();
 
-        return this.mob.getNavigation().moveTo(x, y, z, speed);
+        return this.mob.getEffectiveNavigation().moveTo(x, y, z, speed);
     }
 
     private double getChaseSpeed(LivingEntity target) {
@@ -328,7 +329,7 @@ public class EmeraldMeleeAttackGoal extends Goal {
         if (target instanceof Player) {
             speed = Math.max(speed, 1.1D);
         }
-        return speed;
+        return this.mob.resolveNavigationSpeed(speed);
     }
 
     protected void checkAndPerformAttack(LivingEntity target, double distanceSqr) {

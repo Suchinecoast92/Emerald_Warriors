@@ -68,10 +68,11 @@ public final class CombatTactics {
     }
 
     public static void moveToTargetPreservingHeight(EmeraldMercenaryEntity mob, LivingEntity target, double speed) {
+        double navSpeed = mob.resolveNavigationSpeed(speed);
         if (shouldPreserveHeightInGuard(mob, target)) {
-            mob.getNavigation().moveTo(target.getX(), getRangedNavigationY(mob, target), target.getZ(), speed);
+            mob.getEffectiveNavigation().moveTo(target.getX(), getRangedNavigationY(mob, target), target.getZ(), navSpeed);
         } else {
-            mob.getNavigation().moveTo(target, speed);
+            mob.getEffectiveNavigation().moveTo(target, navSpeed);
         }
     }
 }

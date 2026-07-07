@@ -68,6 +68,50 @@ El toggle controla agresión **automática**. Si tú atacas primero, el mercenar
 - **Clic normal** con cuerno → aplicar orden a todos los vinculados en 64 bloques.
 - Los mercenarios muertos se eliminan automáticamente de los vínculos.
 
+### Catalejo (órdenes tácticas)
+- **Shift + clic derecho** en mercenario con catalejo → vincular / desvincular al grupo del catalejo.
+- **Shift + clic derecho** al aire con catalejo → ciclar la orden almacenada (como el cuerno).
+- **Clic izquierdo** mientras apuntas con el catalejo:
+  - Al **suelo** → orden de movimiento al punto marcado.
+  - A una **entidad** → orden de ataque sobre ese objetivo.
+- Resalta brevemente el objetivo marcado (brillo cliente).
+- Los comandos tácticos no cambian la orden persistente del mercenario.
+
+### Monturas (v3.1)
+Sistema vanilla: **correa** + **silla**, sin GUI nueva.
+
+**Vincular (contratados)**
+1. **Shift + clic derecho** con correa en tu mercenario → seleccionar.
+2. **Shift + clic derecho** en la montura con silla → vincular (consume 1 correa).
+3. **Shift + clic derecho** con correa en el mercenario si ya tiene montura → desvincular.
+
+El mensaje muestra el **nombre de la montura** (`[🐴] Relámpago vinculado.`).
+
+**Comportamiento autónomo**
+- Decide cuándo montar, bajar o ir a pie según orden, distancia, arma y combate.
+- **Follow:** monta si está lejos; baja cerca del dueño (salvo lanza).
+- **Guard / Patrol:** monta para desplazarse; baja al llegar o en melee con espada.
+- **Neutral:** mayormente a pie.
+- A pie y cerca del dueño: puede llevar la montura con correa (estilo errante + llamas).
+- Anti-teleport: camina hasta la montura (~2,5 bloques) antes de subir.
+
+**Campamentos salvajes**
+- Cada mercenario de campamento spawnea con caballo domado y silla.
+- ~40 % montados; el resto a pie con el caballo atado al mercenario.
+- Al contratar, el vínculo persiste.
+
+**Ritmo montado**
+| Situación | Velocidad (pathfinding) |
+|-----------|-------------------------|
+| Viaje (fuera de combate) | `goalSpeed × 1,2` |
+| Combate | viaje `× 1,175` (galope moderado) |
+
+Ejemplos: follow 1,0 → 1,20 viaje / 1,41 combate; patrol 0,9 → 1,08 / 1,27.
+
+**Postura al montar**
+- Cuerpo alineado con la dirección de la montura.
+- Cabeza libre con giro limitado (±55° horizontal, ±40° vertical).
+
 ### IA de combate
 - Goals separados para melee, arco y ballesta.
 - Escudo reactivo, flanqueo variable, strafe en cooldown y retirada con poca vida.
@@ -124,7 +168,7 @@ El mercenario **nunca** targetea a su dueño actual.
 
 - Config editable (ban, leash, radios).
 - Comando `standDown` dedicado sin cambiar orden.
-- Monturas, formaciones y targeting con catalejo.
+- Formaciones y banderín de tropa.
 - Balance fino tras más feedback de jugadores.
 
 ## Arquitectura
@@ -134,6 +178,8 @@ emeraldwarriors/
 ├── entity/          # EmeraldMercenaryEntity + AI goals
 ├── client/          # Render, modelos, GUI
 ├── horn/            # Cuerno y grupos
+├── spyglass/        # Catalejo y comandos tácticos
+├── mount/           # Monturas (vínculo, IA autónoma, ritmos)
 ├── inventory/       # Inventario del mercenario
 ├── mercenary/       # Enums (orden, rango, rol)
 ├── worldgen/        # Campamentos
@@ -151,4 +197,4 @@ CC0-1.0 — ver archivo `LICENSE`.
 
 ---
 
-**Estado:** v1.0.0 — release estable.
+**Estado:** v1.0.0 — catalejo táctico y monturas v3.1 integrados en `main` (desarrollo activo).
