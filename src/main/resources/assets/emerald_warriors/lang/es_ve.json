@@ -1,4 +1,4 @@
-{
+﻿{
   "entity.emerald_warriors.emerald_mercenary": "Mercenario",
   "container.emerald_warriors.mercenary": "Mercenario",
   "item.emerald_warriors.emerald_mercenary_spawn_egg": "Generar mercenario",
@@ -68,12 +68,12 @@
 
   "emerald_warriors.mount.bound": "[🐴] %s vinculado.",
   "emerald_warriors.mount.unbound": "[🐴] %s desvinculado.",
-  "emerald_warriors.mount.await_horse": "[🐴] Seleccionado. Ahora Shift + clic derecho en el caballo.",
+  "emerald_warriors.mount.await_horse": "[🐴] Seleccionado. Ahora Shift + clic derecho en la montura.",
   "emerald_warriors.mount.no_pending_merc": "[🐴] Primero Shift + clic derecho en tu mercenario con una correa.",
   "emerald_warriors.mount.not_owner": "Este mercenario no es tuyo.",
-  "emerald_warriors.mount.no_horse_nearby": "No hay caballo cerca para vincular.",
-  "emerald_warriors.mount.no_mercenary_nearby": "No hay mercenario tuyo cerca para vincular este caballo.",
-  "emerald_warriors.mount.needs_saddle": "El caballo necesita una silla primero.",
+  "emerald_warriors.mount.no_horse_nearby": "No hay montura cerca para vincular.",
+  "emerald_warriors.mount.no_mercenary_nearby": "No hay mercenario tuyo cerca para vincular esta montura.",
+  "emerald_warriors.mount.needs_saddle": "La montura necesita una silla primero.",
 
   "emerald_warriors.rank_up": "¡%1$s subió a %2$s!",
 

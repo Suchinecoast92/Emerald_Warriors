@@ -4,6 +4,7 @@ import emeraldwarriors.entity.EmeraldMercenaryEntity;
 import emeraldwarriors.mercenary.MercenaryOrder;
 import emeraldwarriors.mount.MercenaryMountBehavior;
 import emeraldwarriors.mount.MercenaryMountHelper;
+import emeraldwarriors.mount.MercenaryMounts;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.animal.equine.AbstractHorse;
 
@@ -70,6 +71,7 @@ public class MercenaryWildMountGoal extends Goal {
             return;
         }
         if (this.mercenary.distanceToSqr(horse) <= MercenaryMountBehavior.MOUNT_BOARD_RANGE_SQR) {
+            MercenaryMounts.prepareForMount(horse);
             this.mercenary.startRiding(horse);
             this.mercenary.getNavigation().stop();
         } else if (this.mercenary.getNavigation().isDone()) {

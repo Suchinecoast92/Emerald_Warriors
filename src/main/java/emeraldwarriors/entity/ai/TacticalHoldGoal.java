@@ -53,8 +53,9 @@ public class TacticalHoldGoal extends Goal {
     public void start() {
         BlockPos hold = this.mercenary.getTacticalHoldPos();
         if (hold != null) {
-            this.mercenary.getNavigation().moveTo(
-                    hold.getX() + 0.5, hold.getY(), hold.getZ() + 0.5, this.speedModifier);
+            this.mercenary.getEffectiveNavigation().moveTo(
+                    hold.getX() + 0.5, hold.getY(), hold.getZ() + 0.5,
+                    this.resolveHoldSpeed());
         }
     }
 
@@ -64,15 +65,21 @@ public class TacticalHoldGoal extends Goal {
         if (hold == null) {
             return;
         }
-        if (this.mercenary.getNavigation().isDone()) {
-            this.mercenary.getNavigation().moveTo(
-                    hold.getX() + 0.5, hold.getY(), hold.getZ() + 0.5, this.speedModifier);
+        if (this.mercenary.getEffectiveNavigation().isDone()) {
+            this.mercenary.getEffectiveNavigation().moveTo(
+                    hold.getX() + 0.5, hold.getY(), hold.getZ() + 0.5,
+                    this.resolveHoldSpeed());
         }
     }
 
     @Override
     public void stop() {
-        this.mercenary.getNavigation().stop();
+        this.mercenary.getEffectiveNavigation().stop();
+    }
+
+    /** Misma velocidad que follow: goal 1.0 + boosts montados (equino/camello). */
+    private double resolveHoldSpeed() {
+        return this.mercenary.resolveNavigationSpeed(this.speedModifier);
     }
 
     private double distanceToHoldSqr(BlockPos hold) {

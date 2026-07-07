@@ -1,4 +1,4 @@
-{
+﻿{
   "entity.emerald_warriors.emerald_mercenary": "Mercenary",
   "container.emerald_warriors.mercenary": "Mercenary",
   "item.emerald_warriors.emerald_mercenary_spawn_egg": "Spawn Mercenary",
@@ -68,12 +68,12 @@
 
   "emerald_warriors.mount.bound": "[🐴] %s linked.",
   "emerald_warriors.mount.unbound": "[🐴] %s unlinked.",
-  "emerald_warriors.mount.await_horse": "[🐴] Selected. Now Shift + right-click the horse.",
+  "emerald_warriors.mount.await_horse": "[🐴] Selected. Now Shift + right-click the mount.",
   "emerald_warriors.mount.no_pending_merc": "[🐴] First Shift + right-click your mercenary with a lead.",
   "emerald_warriors.mount.not_owner": "This mercenary is not yours.",
-  "emerald_warriors.mount.no_horse_nearby": "No horse nearby to link.",
-  "emerald_warriors.mount.no_mercenary_nearby": "No owned mercenary nearby to link this horse.",
-  "emerald_warriors.mount.needs_saddle": "The horse needs a saddle first.",
+  "emerald_warriors.mount.no_horse_nearby": "No mount nearby to link.",
+  "emerald_warriors.mount.no_mercenary_nearby": "No owned mercenary nearby to link this mount.",
+  "emerald_warriors.mount.needs_saddle": "The mount needs a saddle first.",
 
   "emerald_warriors.rank_up": "%1$s promoted to %2$s!",
 

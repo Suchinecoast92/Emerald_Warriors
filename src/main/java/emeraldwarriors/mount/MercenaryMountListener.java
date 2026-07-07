@@ -13,7 +13,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 /**
- * Paso 2 del vínculo: Shift + clic derecho con correa en el caballo.
+ * Paso 2 del vínculo: Shift + clic derecho con correa en la montura.
  * El paso 1 (seleccionar mercenario) se maneja en {@link EmeraldMercenaryEntity#mobInteract}.
  */
 public final class MercenaryMountListener {
@@ -33,9 +33,10 @@ public final class MercenaryMountListener {
             if (!stack.is(Items.LEAD)) {
                 return InteractionResult.PASS;
             }
-            if (!(entity instanceof AbstractHorse horse)) {
+            if (!MercenaryMounts.isSupportedMount(entity)) {
                 return InteractionResult.PASS;
             }
+            AbstractHorse mount = (AbstractHorse) entity;
             if (level.isClientSide()) {
                 return InteractionResult.SUCCESS;
             }
@@ -43,7 +44,7 @@ public final class MercenaryMountListener {
                 return InteractionResult.PASS;
             }
 
-            EmeraldMercenaryEntity merc = findPendingMercenary(player, horse, serverLevel);
+            EmeraldMercenaryEntity merc = findPendingMercenary(player, mount, serverLevel);
             if (merc == null) {
                 player.displayClientMessage(
                         Component.translatable("emerald_warriors.mount.no_pending_merc")
@@ -53,7 +54,7 @@ public final class MercenaryMountListener {
                 return InteractionResult.CONSUME;
             }
 
-            if (!horse.isSaddled()) {
+            if (!mount.isSaddled()) {
                 player.displayClientMessage(
                         Component.translatable("emerald_warriors.mount.needs_saddle")
                                 .withStyle(ChatFormatting.RED),
@@ -62,12 +63,12 @@ public final class MercenaryMountListener {
                 return InteractionResult.CONSUME;
             }
 
-            if (horse.getUUID().equals(merc.getBoundHorseUuid())) {
+            if (mount.getUUID().equals(merc.getBoundHorseUuid())) {
                 merc.clearHorseBinding();
                 player.displayClientMessage(
                         Component.translatable(
                                 "emerald_warriors.mount.unbound",
-                                MercenaryMountHelper.mountDisplayName(horse)
+                                MercenaryMountHelper.mountDisplayName(mount)
                         ).withStyle(ChatFormatting.YELLOW),
                         false
                 );
@@ -77,12 +78,12 @@ public final class MercenaryMountListener {
             if (!player.getAbilities().instabuild) {
                 stack.shrink(1);
             }
-            MercenaryMountHelper.claimHorseForMercenary(serverLevel, merc, horse);
+            MercenaryMountHelper.claimHorseForMercenary(serverLevel, merc, mount);
             merc.clearHorseBindSelection();
             player.displayClientMessage(
                     Component.translatable(
                             "emerald_warriors.mount.bound",
-                            MercenaryMountHelper.mountDisplayName(horse)
+                            MercenaryMountHelper.mountDisplayName(mount)
                     ).withStyle(ChatFormatting.GREEN),
                     false
             );
@@ -92,17 +93,17 @@ public final class MercenaryMountListener {
 
     private static EmeraldMercenaryEntity findPendingMercenary(
             Player player,
-            AbstractHorse horse,
+            AbstractHorse mount,
             ServerLevel level
     ) {
         EmeraldMercenaryEntity best = null;
         double bestDist = MercenaryMountHelper.BIND_RANGE * MercenaryMountHelper.BIND_RANGE;
         for (EmeraldMercenaryEntity merc : level.getEntitiesOfClass(
                 EmeraldMercenaryEntity.class,
-                horse.getBoundingBox().inflate(MercenaryMountHelper.BIND_RANGE),
+                mount.getBoundingBox().inflate(MercenaryMountHelper.BIND_RANGE),
                 m -> m.isAlive() && m.isAwaitingHorseBindFrom(player)
         )) {
-            double dist = merc.distanceToSqr(horse);
+            double dist = merc.distanceToSqr(mount);
             if (dist <= bestDist) {
                 bestDist = dist;
                 best = merc;

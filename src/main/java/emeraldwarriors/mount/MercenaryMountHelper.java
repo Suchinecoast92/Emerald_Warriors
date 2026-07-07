@@ -2,17 +2,19 @@ package emeraldwarriors.mount;
 
 import emeraldwarriors.entity.EmeraldMercenaryEntity;
 import emeraldwarriors.mercenary.MercenaryOrder;
+import net.fabricmc.fabric.api.tag.convention.v2.ConventionalBiomeTags;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.animal.equine.AbstractHorse;
-import net.minecraft.world.entity.animal.equine.Horse;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.tags.BiomeTags;
 
 import java.util.List;
 
@@ -34,39 +36,85 @@ public final class MercenaryMountHelper {
             BlockPos campCenter,
             RandomSource random
     ) {
-        AbstractHorse horse = spawnTamedHorse(level, merc.blockPosition(), random);
-        if (horse == null) {
+        AbstractHorse mount = spawnTamedMount(level, merc.blockPosition(), campCenter, random);
+        if (mount == null) {
             return;
         }
 
-        claimHorseForMercenary(level, merc, horse);
+        claimHorseForMercenary(level, merc, mount);
         merc.setCurrentOrder(MercenaryOrder.PATROL);
         merc.setPatrolCenter(campCenter);
 
         boolean startMounted = random.nextFloat() < 0.4F;
         if (startMounted) {
-            merc.startRiding(horse);
+            MercenaryMounts.prepareForMount(mount);
+            merc.startRiding(mount);
         } else {
-            horse.setLeashedTo(merc, true);
+            mount.setLeashedTo(merc, true);
         }
     }
 
-    public static AbstractHorse spawnTamedHorse(ServerLevel level, BlockPos near, RandomSource random) {
-        Horse horse = EntityType.HORSE.create(level, EntitySpawnReason.STRUCTURE);
-        if (horse == null) {
+    public static AbstractHorse spawnTamedMount(
+            ServerLevel level,
+            BlockPos near,
+            BlockPos biomePos,
+            RandomSource random
+    ) {
+        boolean aridBiome = isAridCampBiome(level, biomePos);
+        EntityType<? extends AbstractHorse> type = pickCampMountType(random, aridBiome);
+        AbstractHorse mount = type.create(level, EntitySpawnReason.STRUCTURE);
+        if (mount == null) {
             return null;
         }
 
         double ox = (random.nextDouble() - 0.5D) * 3.0D;
         double oz = (random.nextDouble() - 0.5D) * 3.0D;
-        horse.setPos(near.getX() + 0.5D + ox, near.getY(), near.getZ() + 0.5D + oz);
-        horse.setYRot(random.nextFloat() * 360.0F);
-        horse.finalizeSpawn(level, level.getCurrentDifficultyAt(near), EntitySpawnReason.STRUCTURE, null);
-        horse.setTamed(true);
-        horse.setAge(0);
-        horse.setItemSlot(EquipmentSlot.SADDLE, new ItemStack(Items.SADDLE));
-        level.addFreshEntity(horse);
-        return horse;
+        mount.setPos(near.getX() + 0.5D + ox, near.getY(), near.getZ() + 0.5D + oz);
+        mount.setYRot(random.nextFloat() * 360.0F);
+        mount.finalizeSpawn(level, level.getCurrentDifficultyAt(near), EntitySpawnReason.STRUCTURE, null);
+        mount.setTamed(true);
+        mount.setAge(0);
+        mount.setItemSlot(EquipmentSlot.SADDLE, new ItemStack(Items.SADDLE));
+        level.addFreshEntity(mount);
+        return mount;
+    }
+
+    private static boolean isAridCampBiome(ServerLevel level, BlockPos pos) {
+        var biome = level.getBiome(pos);
+        if (biome.is(ConventionalBiomeTags.IS_BADLANDS) || biome.is(BiomeTags.IS_BADLANDS)) {
+            return true;
+        }
+        String path = biome.unwrapKey()
+                .map(ResourceKey::identifier)
+                .map(id -> id.getPath())
+                .orElse("");
+        return path.contains("desert");
+    }
+
+    private static EntityType<? extends AbstractHorse> pickCampMountType(RandomSource random, boolean aridBiome) {
+        float roll = random.nextFloat();
+        if (aridBiome) {
+            if (roll < 0.70F) {
+                return EntityType.CAMEL;
+            }
+            if (roll < 0.85F) {
+                return EntityType.HORSE;
+            }
+            if (roll < 0.95F) {
+                return EntityType.DONKEY;
+            }
+            return EntityType.MULE;
+        }
+        if (roll < 0.50F) {
+            return EntityType.HORSE;
+        }
+        if (roll < 0.70F) {
+            return EntityType.DONKEY;
+        }
+        if (roll < 0.85F) {
+            return EntityType.MULE;
+        }
+        return EntityType.CAMEL;
     }
 
     public static Component mountDisplayName(AbstractHorse horse) {

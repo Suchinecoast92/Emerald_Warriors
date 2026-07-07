@@ -4,6 +4,7 @@ import emeraldwarriors.Emerald_Warriors;
 import emeraldwarriors.client.model.MercenaryArmorModel;
 import emeraldwarriors.client.model.MercenaryPlayerModel;
 import emeraldwarriors.entity.EmeraldMercenaryEntity;
+import emeraldwarriors.mount.MercenaryMounts;
 import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.model.geom.ModelLayers;
 
@@ -66,6 +67,7 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
         public boolean slim = false;
         public boolean contractAdmiring = false;
         public boolean ridingHorse = false;
+        public double mountRenderOffsetY = 0.0D;
     }
 
     @Override
@@ -100,6 +102,7 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
 
         state.ridingHorse = entity.isPassenger() && entity.getVehicle() instanceof AbstractHorse;
         if (state.ridingHorse && entity.getVehicle() instanceof AbstractHorse horse) {
+            state.mountRenderOffsetY = MercenaryMounts.getRenderYOffsetY(horse);
             state.pose = Pose.SITTING;
             float bodyYaw = Mth.rotLerp(partialTick, horse.yRotO, horse.getYRot());
             float headYaw = Mth.rotLerp(partialTick, entity.yHeadRotO, entity.yHeadRot);
@@ -205,7 +208,7 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
             return base.add(0.0D, 0.125D, 0.0D);
         }
         if (state.ridingHorse) {
-            return base.add(0.0D, 0.05D, 0.0D);
+            return base.add(0.0D, state.mountRenderOffsetY, 0.0D);
         }
         return base.add(0.0D, -0.1D, 0.0D);
     }

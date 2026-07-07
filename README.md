@@ -87,6 +87,13 @@ Sistema vanilla: **correa** + **silla**, sin GUI nueva.
 
 El mensaje muestra el **nombre de la montura** (`[🐴] Relámpago vinculado.`).
 
+**Monturas soportadas**
+- Caballo, burro, mula y camello (todos con silla).
+- Campamentos: 50 % caballo, 20 % burro, 15 % mula, 15 % camello.
+- En **desierto** y **badlands**: 70 % camello, 15 % caballo, 10 % burro, 5 % mula.
+- Camello sentado: se levanta automáticamente antes de montar o moverse con él.
+- Ajustes de altura por tipo (anclaje + render) para que el jinete quede bien en la silla.
+
 **Comportamiento autónomo**
 - Decide cuándo montar, bajar o ir a pie según orden, distancia, arma y combate.
 - **Follow:** monta si está lejos; baja cerca del dueño (salvo lanza).
@@ -96,15 +103,17 @@ El mensaje muestra el **nombre de la montura** (`[🐴] Relámpago vinculado.`).
 - Anti-teleport: camina hasta la montura (~2,5 bloques) antes de subir.
 
 **Campamentos salvajes**
-- Cada mercenario de campamento spawnea con caballo domado y silla.
-- ~40 % montados; el resto a pie con el caballo atado al mercenario.
+- Cada mercenario de campamento spawnea con una montura domada y silla (caballo, burro, mula o camello).
+- ~40 % montados; el resto a pie con la montura atada al mercenario.
 - Al contratar, el vínculo persiste.
 
 **Ritmo montado**
 | Situación | Velocidad (pathfinding) |
 |-----------|-------------------------|
-| Viaje (fuera de combate) | `goalSpeed × 1,2` |
+| Viaje (fuera de combate) | `goalSpeed × 1,2` (× escala camello si aplica) |
 | Combate | viaje `× 1,175` (galope moderado) |
+
+Equinos usan escala 1,0. Camello: al menos ×1,55 respecto a su velocidad base, o más si su atributo es menor que un caballo medio.
 
 Ejemplos: follow 1,0 → 1,20 viaje / 1,41 combate; patrol 0,9 → 1,08 / 1,27.
 

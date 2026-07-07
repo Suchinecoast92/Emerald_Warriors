@@ -248,6 +248,7 @@ public final class MercenaryMountBehavior {
         }
 
         merc.getNavigation().stop();
+        MercenaryMounts.prepareForMount(horse);
         merc.startRiding(horse);
     }
 
@@ -287,13 +288,14 @@ public final class MercenaryMountBehavior {
     }
 
     /**
-     * Viaje: goalSpeed × 1.2. Combate: viaje × 1.175 (galope sobre el ritmo de viaje).
+     * Viaje: goalSpeed × 1.2 × escala montura. Combate: viaje × 1.175.
+     * Camello: escala extra desde su velocidad base para igualar ritmo equino.
      */
     public static double resolveNavigationSpeed(EmeraldMercenaryEntity merc, double goalSpeed) {
-        if (!(merc.getVehicle() instanceof AbstractHorse)) {
+        if (!(merc.getVehicle() instanceof AbstractHorse mount)) {
             return goalSpeed;
         }
-        double travelSpeed = goalSpeed * MOUNTED_WALK_SPEED_BOOST;
+        double travelSpeed = goalSpeed * MOUNTED_WALK_SPEED_BOOST * MercenaryMounts.getMountedNavigationScale(mount);
         if (isMountedCombat(merc)) {
             return travelSpeed * MOUNTED_COMBAT_EXTRA_BOOST;
         }

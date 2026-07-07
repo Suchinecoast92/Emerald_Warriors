@@ -28,6 +28,7 @@ import emeraldwarriors.inventory.MercenaryInventory;
 import emeraldwarriors.inventory.MercenaryMenu;
 import emeraldwarriors.mount.MercenaryMountHelper;
 import emeraldwarriors.mount.MercenaryMountBehavior;
+import emeraldwarriors.mount.MercenaryMounts;
 import emeraldwarriors.mercenary.MercenaryOrder;
 import emeraldwarriors.mercenary.MercenaryRank;
 import emeraldwarriors.mercenary.MercenaryTranslations;
@@ -1936,6 +1937,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             return false;
         }
         MercenaryMountBehavior.releaseHorseLead(this, horse);
+        MercenaryMounts.prepareForMount(horse);
         return this.startRiding(horse);
     }
 
@@ -2851,8 +2853,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     public Vec3 getVehicleAttachmentPoint(net.minecraft.world.entity.Entity vehicle) {
         Vec3 base = super.getVehicleAttachmentPoint(vehicle);
         if (vehicle instanceof AbstractHorse) {
-            // Subir el punto de anclaje baja al jinete humanoide sobre la silla (igual que bote/minecart).
-            return base.add(0.0D, 0.58D, 0.0D);
+            return base.add(0.0D, MercenaryMounts.getRideAttachmentYOffset(vehicle), 0.0D);
         }
         // Ajustar el punto de anclaje al vehículo para que el cuerpo quede más bajo
         // (butt apoyado en el asiento del bote/minecart en vez de flotar ligeramente).
