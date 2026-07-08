@@ -24,7 +24,7 @@ import java.util.UUID;
 @Mixin(InstrumentItem.class)
 public class InstrumentItemMixin {
 
-    private static final double COMMAND_RADIUS = 64.0;
+    private static final double COMMAND_RADIUS = 128.0;
 
     @Inject(at = @At("RETURN"), method = "use")
     private void afterHornUse(Level level, Player player, InteractionHand hand,

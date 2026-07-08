@@ -19,7 +19,7 @@ import java.util.UUID;
 
 public final class SpyglassCommandHandler {
 
-    public static final double COMMAND_RADIUS = 64.0;
+    public static final double COMMAND_RADIUS = 128.0;
 
     private SpyglassCommandHandler() {
     }

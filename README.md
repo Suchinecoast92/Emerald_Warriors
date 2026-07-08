@@ -65,7 +65,7 @@ El toggle controla agresión **automática**. Si tú atacas primero, el mercenar
 ### Cuerno de cabra (grupos)
 - **Shift + clic** en mercenario con cuerno → vincular / desvincular.
 - **Shift + clic** al aire con cuerno → cambiar orden almacenada en el cuerno.
-- **Clic normal** con cuerno → aplicar orden a todos los vinculados en 64 bloques.
+- **Clic normal** con cuerno → aplicar orden a todos los vinculados en 128 bloques.
 - Los mercenarios muertos se eliminan automáticamente de los vínculos.
 
 ### Catalejo (órdenes tácticas)
@@ -76,6 +76,7 @@ El toggle controla agresión **automática**. Si tú atacas primero, el mercenar
   - A una **entidad** → orden de ataque sobre ese objetivo.
 - Resalta brevemente el objetivo marcado (brillo cliente).
 - Los comandos tácticos no cambian la orden persistente del mercenario.
+- Alcance de mando y de apuntado: 128 bloques.
 
 ### Monturas (v3.1)
 Sistema vanilla: **correa** + **silla**, sin GUI nueva.
@@ -101,6 +102,16 @@ El mensaje muestra el **nombre de la montura** (`[🐴] Relámpago vinculado.`).
 - **Neutral:** mayormente a pie.
 - A pie y cerca del dueño: puede llevar la montura con correa (estilo errante + llamas).
 - Anti-teleport: camina hasta la montura (~2,5 bloques) antes de subir.
+
+**Carga con lanza (jinete)**
+- Los mercenarios montados con **lanza** ejecutan el ataque de carga cinético vanilla.
+- Reutiliza la IA de carga de los mobs con lanza (1.21.11): galopan contra el objetivo,
+  mantienen la lanza en guardia y reposicionan entre pasadas para volver a cargar.
+- El daño escala con la velocidad relativa (galope de la montura); a mayor velocidad, más daño,
+  con knockback y capacidad de desmontar en la fase inicial (comportamiento vanilla del componente).
+- Convergencia carga/jab: con distancia embisten (carga); pegados y sin carrerilla ceden al
+  golpe melee (jab) y vuelven a cargar en cuanto recuperan distancia.
+- El lancero se mantiene montado en combate para poder cargar.
 
 **Campamentos salvajes**
 - Cada mercenario de campamento spawnea con una montura domada y silla (caballo, burro, mula o camello).

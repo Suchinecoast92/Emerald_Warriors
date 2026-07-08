@@ -11,7 +11,7 @@ import net.minecraft.world.entity.animal.equine.AbstractHorse;
  */
 public final class MercenaryMounts {
 
-    private static final double EQUINE_RIDE_ATTACH_Y = 0.58D;
+    private static final double EQUINE_RIDE_ATTACH_Y = 0.74D;
     private static final double CAMEL_RIDE_ATTACH_Y = 0.82D;
     private static final double EQUINE_RENDER_OFFSET_Y = 0.05D;
     private static final double CAMEL_RENDER_OFFSET_Y = 0.12D;

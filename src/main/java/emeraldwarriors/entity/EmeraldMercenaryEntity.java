@@ -25,6 +25,7 @@ import emeraldwarriors.entity.ai.UseHealingItemGoal;
 import emeraldwarriors.entity.ai.MercenarySleepGoal;
 import emeraldwarriors.entity.ai.MercenaryWildMountGoal;
 import emeraldwarriors.entity.ai.MercenaryWildPatrolFollowGoal;
+import emeraldwarriors.entity.ai.MercenaryLanceChargeGoal;
 import emeraldwarriors.entity.spawn.MercenaryWildSpawnHelper;
 import emeraldwarriors.inventory.MercenaryInventory;
 import emeraldwarriors.inventory.MercenaryMenu;
@@ -162,6 +163,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private MercenaryRole currentRole = MercenaryRole.NONE;
 
     private EmeraldMeleeAttackGoal meleeAttackGoal;
+    private MercenaryLanceChargeGoal lanceChargeGoal;
     private EmeraldBowAttackGoal bowAttackGoal;
     private EmeraldCrossbowAttackGoal crossbowAttackGoal;
 
@@ -1749,6 +1751,14 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.meleeAttackGoal    = new EmeraldMeleeAttackGoal(this, 1.1D, true);
         this.bowAttackGoal      = new EmeraldBowAttackGoal(this, 0.9D, 20, 15.0F);
         this.crossbowAttackGoal = new EmeraldCrossbowAttackGoal(this, 0.9D, 30, 15.0F);
+
+        // Prioridad 2: Carga con lanza montado (reutiliza la mecánica cinética vanilla).
+        // Se añade antes del melee para que tenga preferencia cuando el jinete lleva lanza.
+        // Base vanilla: Zombie.addBehaviourGoals() → SpearUseGoal(mob, 1.0, 1.0, 10.0F, 2.0F).
+        // Subimos el modificador de carga (galope de embestida) para que la velocidad
+        // relativa dé daño cinético efectivo; el resto de la mecánica es vanilla.
+        this.lanceChargeGoal = new MercenaryLanceChargeGoal(this, 1.35D, 1.0D, 10.0F, 2.0F);
+        this.goalSelector.addGoal(2, this.lanceChargeGoal);
 
         // Prioridad 3: Montar caballo vinculado (salvajes sin dueño)
         this.goalSelector.addGoal(3, new MercenaryWildMountGoal(this));
@@ -3874,11 +3884,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         }
 
         if (result) {
-            // Apply knockback for spears (vanilla 1.21.11: spears have inherent knockback in jab/charge attacks)
+            // Knockback del jab de lanza (ataque melee normal). La carga montada la gestiona
+            // MercenaryLanceChargeGoal + el componente cinético vanilla, con su propio knockback.
             ItemStack weaponItem = this.getMainHandItem();
             if (!weaponItem.isEmpty() && isSpearItem(weaponItem.getItem()) && target instanceof LivingEntity living) {
-                // Spear knockback: jab has 0.5D knockback, charge has more (vanilla behavior)
-                // Since mobs don't do charge attacks, apply jab knockback (0.5D)
                 living.knockback(0.5D, this.getX() - living.getX(), this.getZ() - living.getZ());
             }
             

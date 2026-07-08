@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Carga con lanza montado
+- Los jinetes con lanza usan el ataque de carga cinético vanilla (1.21.11).
+- Puerto de la IA vanilla `SpearUseGoal` adaptado al mercenario (PathfinderMob) y a la
+  navegación de la montura; el daño lo aplica el componente `kinetic_weapon` por velocidad.
+
+### Mando a distancia
+- Alcance de órdenes de cuerno y catalejo ampliado de 64 a 128 bloques.
+
 ### Monturas v3.1
 - Caballo, burro, mula y camello en campamentos y contratados.
 - Velocidad de viaje y combate montado; escala especial para camello.
