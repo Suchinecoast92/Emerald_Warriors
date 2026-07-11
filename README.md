@@ -46,9 +46,11 @@ Stats por rango: HP, daño, knockback, radios de guardia/patrulla, distancia de 
 | FOLLOW  | Sigue al dueño; combate defensivo |
 | GUARD   | Ancla en un punto; combate en radio |
 | PATROL  | Patrulla un área; combate activo en zona |
-| NEUTRAL | Deambula sin combate proactivo; solo se defiende si lo atacan |
+| NEUTRAL | Deambula sin combate proactivo; se defiende si lo atacan (jugador, mob u otro mercenario) |
 
 Cambiar de orden suelta el target actual y reinicia la IA de combate.
+
+**Autodefensa (salvajes y NEUTRAL):** los mercenarios sin contrato no atacan por iniciativa propia, pero responden a quien los lastime — incluidos tus mercenarios contratados si los provocan. Pueden perseguir al agresor aunque salga del radio de patrulla.
 
 ### Toggle PvP — `Jugadores: ON/OFF`
 Visible en la GUI del mercenario cuando la orden es **FOLLOW**, **GUARD** o **PATROL**.
@@ -77,6 +79,9 @@ El toggle controla agresión **automática**. Si tú atacas primero, el mercenar
 - Resalta brevemente el objetivo marcado (brillo cliente).
 - Los comandos tácticos no cambian la orden persistente del mercenario.
 - Alcance de mando y de apuntado: 128 bloques.
+- **Dispersión en posición:** varios mercenarios enviados al mismo punto se reparten en un radio corto (0,6–2,6 bloques) en lugar de amontonarse en el mismo bloque.
+- **Ataque táctico:** arqueros y ballesteros se acercan al objetivo antes de disparar; la ballesta no carga fuera de alcance ni sin línea de visión.
+- En combate grupal, cada mercenario flanquea desde un ángulo estable para rodear al enemigo.
 
 ### Monturas (v3.1)
 Sistema vanilla: **correa** + **silla**, sin GUI nueva.
@@ -117,6 +122,7 @@ El mensaje muestra el **nombre de la montura** (`[🐴] Relámpago vinculado.`).
 - Cada mercenario de campamento spawnea con una montura domada y silla (caballo, burro, mula o camello).
 - ~25 % de los mercenarios del campamento reciben montura; ~40 % de esos empiezan montados, el resto a pie con correa.
 - Al contratar, el vínculo persiste.
+- Al **morir**, **expirar el contrato** o **romper contrato por disciplina**, el mercenario se desmonta y suelta la montura vinculada.
 
 **Patrullas salvajes (spawn natural)**
 - Grupos de 1–4 mercenarios en el mundo.
@@ -140,9 +146,9 @@ Ejemplos: follow 1,0 → 1,20 viaje / 1,41 combate; patrol 0,9 → 1,08 / 1,27.
 ### IA de combate
 - Goals separados para melee, arco y ballesta.
 - Escudo reactivo, flanqueo variable, strafe en cooldown y retirada con poca vida.
-- Ranged: evita friendly fire, busca terreno elevado en guardia/patrulla.
+- Ranged: evita friendly fire, busca terreno elevado en guardia/patrulla; en órdenes tácticas prioriza acercarse antes de disparar.
 - Golpes críticos (Aprendiz 15 %, Experto 25 %).
-- Leash por rango: abandona persecución si se aleja demasiado del ancla.
+- Leash por rango: abandona persecución si se aleja demasiado del ancla (excepto en autodefensa o comandos tácticos).
 - Comportamiento ampliado durante raids.
 
 ### Defensa de aldeanos
@@ -241,4 +247,4 @@ CC0-1.0 — ver archivo `LICENSE`.
 
 ---
 
-**Estado:** v1.0.0 — monturas multi-tipo (v3.1), patrullas salvajes montadas y spawn en grupos integrados en `main`.
+**Estado:** v1.0.0 — dispersión táctica, autodefensa de salvajes, desvincular montura al terminar contrato y mejoras de combate a distancia integradas en `main`.

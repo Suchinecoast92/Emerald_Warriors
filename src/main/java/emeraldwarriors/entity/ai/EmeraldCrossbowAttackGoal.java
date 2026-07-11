@@ -148,16 +148,22 @@ public class EmeraldCrossbowAttackGoal extends Goal {
 
         double distSqr = this.mob.distanceToSqr(target.getX(), target.getY(), target.getZ());
         boolean canSee  = this.mob.getSensing().hasLineOfSight(target);
+        boolean inRange = distSqr <= (double) this.attackRadiusSqr;
+        boolean closingForTactical = this.mob.isTacticalAttackTarget(target) && !inRange;
         boolean repositioningThisTick = false;
 
         if (canSee) ++this.seeTime; else --this.seeTime;
 
-        if (canSee) {
+        if (canSee && !closingForTactical) {
             repositioningThisTick = this.tryRepositionAroundTarget(target, distSqr);
         }
 
-        boolean inRange = distSqr <= (double) this.attackRadiusSqr;
         boolean holdHighGround = CombatTactics.canHoldGroundAndShoot(this.mob, target, distSqr, this.attackRadiusSqr);
+
+        // Fuera de alcance: no cargar ni disparar; acercarse primero (como el melee del grupo).
+        if (!inRange && this.crossbowState != CrossbowState.UNCHARGED) {
+            this.abortCrossbowCharge();
+        }
 
         if (holdHighGround) {
             this.mob.getEffectiveNavigation().stop();
@@ -203,9 +209,9 @@ public class EmeraldCrossbowAttackGoal extends Goal {
         ItemStack crossbow = this.mob.getMainHandItem();
 
         switch (this.crossbowState) {
-            // ── Wait for cooldown, then start charging ──────────────────
+            // ── Wait for cooldown, then start charging (solo en alcance y con visión) ──
             case UNCHARGED -> {
-                if (this.attackDelay <= 0) {
+                if (this.attackDelay <= 0 && inRange && canSee) {
                     if (repositioningThisTick) {
                         break;
                     }
@@ -248,9 +254,9 @@ public class EmeraldCrossbowAttackGoal extends Goal {
                     this.crossbowState = CrossbowState.READY_TO_ATTACK;
                 }
             }
-            // ── Ready: fire when line of sight is clear ─────────────────
+            // ── Ready: fire when in range and line of sight is clear ───
             case READY_TO_ATTACK -> {
-                if (this.attackDelay <= 0) {
+                if (this.attackDelay <= 0 && inRange && canSee) {
                     if (repositioningThisTick) {
                         break;
                     }
@@ -334,10 +340,20 @@ public class EmeraldCrossbowAttackGoal extends Goal {
 
     private double getChaseSpeed(LivingEntity target) {
         double speed = this.speedModifier;
-        if (target instanceof Player) {
+        if (target instanceof Player || this.mob.isTacticalAttackTarget(target)) {
             speed = Math.max(speed, 1.1D);
         }
         return this.mob.resolveNavigationSpeed(speed);
+    }
+
+    /** Cancela la carga/disparo preparado para volver a acercarse al objetivo. */
+    private void abortCrossbowCharge() {
+        if (this.mob.isUsingItem()) {
+            this.mob.stopUsingItem();
+        }
+        this.mob.setChargingCrossbow(false);
+        this.crossbowState = CrossbowState.UNCHARGED;
+        this.attackDelay = 0;
     }
 
     private boolean isTooFarFromAnchor() {

@@ -159,7 +159,9 @@ public class EmeraldMeleeAttackGoal extends Goal {
         this.mob.setAggressive(true);
         this.ticksUntilNextPathRecalculation = 0;
         this.ticksUntilNextAttack = 0;
-        this.flankAngleSeed = this.mob.getRandom().nextInt(360);
+        // Ángulo de flanqueo estable por entidad: reparte a los mercenarios que atacan al
+        // mismo objetivo alrededor de él (distintos lados) en vez de amontonarse en uno solo.
+        this.flankAngleSeed = Math.floorMod((int) Math.toDegrees(this.mob.getPersonalSpreadAngle()), 360);
         this.strafeRight = this.mob.getRandom().nextBoolean();
         this.strafeTicks = 0;
         this.shieldDropWindupTicks = 0;

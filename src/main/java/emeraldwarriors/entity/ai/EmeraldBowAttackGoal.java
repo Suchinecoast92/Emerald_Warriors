@@ -134,11 +134,12 @@ public class EmeraldBowAttackGoal extends Goal {
 
         double distSqr = this.mob.distanceToSqr(target.getX(), target.getY(), target.getZ());
         boolean canSee = this.mob.getSensing().hasLineOfSight(target);
+        boolean isUsingBow = this.mob.isUsingItem() && this.mob.getUseItem().getItem() instanceof BowItem;
+        boolean closingForTactical = this.mob.isTacticalAttackTarget(target)
+                && distSqr > (double) this.attackRadiusSqr;
         boolean repositioningThisTick = false;
 
-        boolean isUsingBow = this.mob.isUsingItem() && this.mob.getUseItem().getItem() instanceof BowItem;
-
-        if (canSee && !isUsingBow) {
+        if (canSee && !isUsingBow && !closingForTactical) {
             repositioningThisTick = this.tryRepositionAroundTarget(target, distSqr);
         }
 
@@ -319,7 +320,7 @@ public class EmeraldBowAttackGoal extends Goal {
 
     private double getChaseSpeed(LivingEntity target) {
         double speed = this.speedModifier;
-        if (target instanceof Player) {
+        if (target instanceof Player || this.mob.isTacticalAttackTarget(target)) {
             speed = Math.max(speed, 1.1D);
         }
         return this.mob.resolveNavigationSpeed(speed);

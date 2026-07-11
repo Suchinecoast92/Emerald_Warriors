@@ -1,13 +1,19 @@
 package emeraldwarriors.entity.ai;
 
 import emeraldwarriors.entity.EmeraldMercenaryEntity;
-import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.EnumSet;
 
 /**
  * Move to a spyglass-marked position and hold until the tactical command is cleared.
+ *
+ * <p>El punto marcado es un destino <em>aproximado</em>: cada mercenario apunta a un
+ * pequeño desplazamiento personal alrededor del punto (ver
+ * {@link EmeraldMercenaryEntity#getTacticalHoldTarget()}), de modo que un grupo enviado
+ * al mismo sitio se reparte de forma natural en un radio corto en vez de amontonarse en
+ * el mismo bloque. Se apoya por completo en el pathfinding vanilla.</p>
  */
 public class TacticalHoldGoal extends Goal {
 
@@ -30,11 +36,11 @@ public class TacticalHoldGoal extends Goal {
         if (!this.mercenary.canObeyTacticalCommands()) {
             return false;
         }
-        BlockPos hold = this.mercenary.getTacticalHoldPos();
-        if (hold == null) {
+        Vec3 target = this.mercenary.getTacticalHoldTarget();
+        if (target == null) {
             return false;
         }
-        return this.distanceToHoldSqr(hold) > ARRIVE_DISTANCE_SQR;
+        return this.distanceToTargetSqr(target) > ARRIVE_DISTANCE_SQR;
     }
 
     @Override
@@ -42,33 +48,22 @@ public class TacticalHoldGoal extends Goal {
         if (!this.mercenary.isTacticalHoldActive() || !this.mercenary.canObeyTacticalCommands()) {
             return false;
         }
-        BlockPos hold = this.mercenary.getTacticalHoldPos();
-        if (hold == null) {
+        Vec3 target = this.mercenary.getTacticalHoldTarget();
+        if (target == null) {
             return false;
         }
-        return this.distanceToHoldSqr(hold) > ARRIVE_DISTANCE_SQR;
+        return this.distanceToTargetSqr(target) > ARRIVE_DISTANCE_SQR;
     }
 
     @Override
     public void start() {
-        BlockPos hold = this.mercenary.getTacticalHoldPos();
-        if (hold != null) {
-            this.mercenary.getEffectiveNavigation().moveTo(
-                    hold.getX() + 0.5, hold.getY(), hold.getZ() + 0.5,
-                    this.resolveHoldSpeed());
-        }
+        this.moveToTarget();
     }
 
     @Override
     public void tick() {
-        BlockPos hold = this.mercenary.getTacticalHoldPos();
-        if (hold == null) {
-            return;
-        }
         if (this.mercenary.getEffectiveNavigation().isDone()) {
-            this.mercenary.getEffectiveNavigation().moveTo(
-                    hold.getX() + 0.5, hold.getY(), hold.getZ() + 0.5,
-                    this.resolveHoldSpeed());
+            this.moveToTarget();
         }
     }
 
@@ -77,12 +72,20 @@ public class TacticalHoldGoal extends Goal {
         this.mercenary.getEffectiveNavigation().stop();
     }
 
+    private void moveToTarget() {
+        Vec3 target = this.mercenary.getTacticalHoldTarget();
+        if (target != null) {
+            this.mercenary.getEffectiveNavigation().moveTo(
+                    target.x, target.y, target.z, this.resolveHoldSpeed());
+        }
+    }
+
     /** Misma velocidad que follow: goal 1.0 + boosts montados (equino/camello). */
     private double resolveHoldSpeed() {
         return this.mercenary.resolveNavigationSpeed(this.speedModifier);
     }
 
-    private double distanceToHoldSqr(BlockPos hold) {
-        return this.mercenary.distanceToSqr(hold.getX() + 0.5, hold.getY(), hold.getZ() + 0.5);
+    private double distanceToTargetSqr(Vec3 target) {
+        return this.mercenary.distanceToSqr(target.x, target.y, target.z);
     }
 }

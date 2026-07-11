@@ -175,6 +175,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     // Spyglass tactical commands (temporary, do not change persistent MercenaryOrder)
     private BlockPos tacticalHoldPos;
+    // Pequeño desplazamiento personal alrededor del punto marcado para que el grupo se
+    // reparta de forma natural en vez de apilarse todos en el mismo bloque.
+    private double tacticalHoldOffsetX;
+    private double tacticalHoldOffsetZ;
     private boolean tacticalHoldActive;
     private int tacticalAttackTargetId = -1;
     private UUID tacticalAttackTargetUuid;
@@ -288,23 +292,26 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     @Override
     public void die(DamageSource source) {
-        if (!this.level().isClientSide() && this.level() instanceof ServerLevel sl) {
-            UUID myId = this.getUUID();
-            for (ServerPlayer sp : sl.getServer().getPlayerList().getPlayers()) {
-                Inventory inv = sp.getInventory();
-                for (int i = 0; i < inv.getContainerSize(); i++) {
-                    ItemStack st = inv.getItem(i);
-                    if (!HornGroupManager.isGoatHorn(st)) {
-                        if (!SpyglassGroupManager.isSpyglass(st)) {
+        if (!this.level().isClientSide()) {
+            this.clearHorseBinding();
+            if (this.level() instanceof ServerLevel sl) {
+                UUID myId = this.getUUID();
+                for (ServerPlayer sp : sl.getServer().getPlayerList().getPlayers()) {
+                    Inventory inv = sp.getInventory();
+                    for (int i = 0; i < inv.getContainerSize(); i++) {
+                        ItemStack st = inv.getItem(i);
+                        if (!HornGroupManager.isGoatHorn(st)) {
+                            if (!SpyglassGroupManager.isSpyglass(st)) {
+                                continue;
+                            }
+                            if (SpyglassGroupManager.isMercenaryLinked(st, myId)) {
+                                SpyglassGroupManager.removeMercenary(st, myId);
+                            }
                             continue;
                         }
-                        if (SpyglassGroupManager.isMercenaryLinked(st, myId)) {
-                            SpyglassGroupManager.removeMercenary(st, myId);
+                        if (HornGroupManager.isMercenaryLinked(st, myId)) {
+                            HornGroupManager.removeMercenary(st, myId);
                         }
-                        continue;
-                    }
-                    if (HornGroupManager.isMercenaryLinked(st, myId)) {
-                        HornGroupManager.removeMercenary(st, myId);
                     }
                 }
             }
@@ -608,6 +615,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         }
         this.clearTacticalAttack();
         this.tacticalHoldPos = pos.immutable();
+        this.assignTacticalHoldOffset();
         this.tacticalHoldActive = true;
         if (order == MercenaryOrder.GUARD) {
             this.guardPos = this.tacticalHoldPos;
@@ -709,13 +717,60 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         return this.tacticalAttackActive;
     }
 
-    /** Spyglass tactical commands bypass FOLLOW chase-distance limits from the owner anchor. */
+    private static final int SELF_DEFENSE_TARGET_TICKS = 200;
+
+    /** True when {@code target} recently damaged this mercenary (retaliation window). */
+    public boolean isRecentAttacker(LivingEntity target) {
+        if (target == null) {
+            return false;
+        }
+        LivingEntity lastHurtBy = this.getLastHurtByMob();
+        return lastHurtBy != null
+                && lastHurtBy == target
+                && (this.tickCount - this.getLastHurtByMobTimestamp()) <= SELF_DEFENSE_TARGET_TICKS;
+    }
+
+    /** Spyglass tactical commands and self-defense bypass chase-distance limits from the anchor. */
     public boolean shouldIgnoreChaseAnchor() {
-        return this.tacticalAttackActive || this.tacticalHoldActive;
+        if (this.tacticalAttackActive || this.tacticalHoldActive) {
+            return true;
+        }
+        LivingEntity target = this.getTarget();
+        return target != null && this.isRecentAttacker(target);
     }
 
     public BlockPos getTacticalHoldPos() {
         return this.tacticalHoldPos;
+    }
+
+    /**
+     * Destino real de este mercenario: el punto marcado más un pequeño desplazamiento
+     * personal, para que varios mercenarios enviados al mismo sitio se repartan de forma
+     * natural en un radio corto en lugar de amontonarse en el mismo bloque. El pathfinding
+     * vanilla se encarga del resto (si el punto exacto no es alcanzable, se acerca lo posible).
+     */
+    public Vec3 getTacticalHoldTarget() {
+        if (this.tacticalHoldPos == null) {
+            return null;
+        }
+        return new Vec3(
+                this.tacticalHoldPos.getX() + 0.5D + this.tacticalHoldOffsetX,
+                this.tacticalHoldPos.getY(),
+                this.tacticalHoldPos.getZ() + 0.5D + this.tacticalHoldOffsetZ);
+    }
+
+    /** Ángulo estable por entidad (radianes) para distribuir mercenarios alrededor de un punto común. */
+    public double getPersonalSpreadAngle() {
+        // Ángulo áureo por id: reparte entidades consecutivas de forma uniforme sin cálculos por vecino.
+        return this.getId() * 2.399963229728653D;
+    }
+
+    /** Calcula un desplazamiento personal corto (0,6–2,6 bloques) alrededor del punto marcado. */
+    private void assignTacticalHoldOffset() {
+        double angle = this.getPersonalSpreadAngle() + (this.random.nextDouble() - 0.5D) * 0.6D;
+        double radius = 0.6D + this.random.nextDouble() * 2.0D;
+        this.tacticalHoldOffsetX = Math.cos(angle) * radius;
+        this.tacticalHoldOffsetZ = Math.sin(angle) * radius;
     }
 
     public LivingEntity getTacticalAttackTarget() {
@@ -1918,6 +1973,13 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     public void clearHorseBinding() {
         AbstractHorse horse = this.findBoundHorse();
+        if (horse == null
+                && this.isPassenger()
+                && this.getVehicle() instanceof AbstractHorse mount
+                && this.boundHorseUuid != null
+                && mount.getUUID().equals(this.boundHorseUuid)) {
+            horse = mount;
+        }
         MercenaryMountBehavior.releaseHorseLead(this, horse);
         this.boundHorseUuid = null;
         this.clearHorseBindSelection();
@@ -2325,6 +2387,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             this.stopUsingItem();
         }
 
+        this.clearHorseBinding();
+
         sl.sendParticles(ParticleTypes.ANGRY_VILLAGER,
                 this.getX(), this.getY() + 1.0, this.getZ(), 12, 0.5, 0.6, 0.5, 0.0);
 
@@ -2718,6 +2782,33 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     }
     
     /**
+     * Used by {@link emeraldwarriors.entity.ai.EmeraldHurtByTargetGoal} so mercs can
+     * retaliate against any recent attacker without patrol-zone or PvP filters.
+     */
+    public void setTargetFromSelfDefense(LivingEntity target) {
+        if (target == null || !target.isAlive()) {
+            return;
+        }
+        if (target instanceof AbstractVillager || target instanceof IronGolem) {
+            return;
+        }
+        if (target instanceof Player p && (p.isCreative() || p.isSpectator())) {
+            return;
+        }
+        if (target instanceof Player p && this.ownerUuid != null && this.ownerUuid.equals(p.getUUID())) {
+            return;
+        }
+        if (target instanceof EmeraldMercenaryEntity other) {
+            UUID otherOwner = other.getOwnerUuid();
+            if (otherOwner != null && otherOwner.equals(this.ownerUuid)) {
+                return;
+            }
+        }
+        super.setTarget(target);
+        this.setAggressive(true);
+    }
+
+    /**
      * Used by {@link emeraldwarriors.entity.ai.DefendVillagerGoal} so wild mercs can
      * target players who attack villagers without going through PvP toggle checks.
      */
@@ -2765,7 +2856,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                             && this.disciplineExOwnerAggroTicks > 0
                             && !this.disciplineExOwnerKilledDuringAggro)
                     && !this.canInitiatePvpAgainst(p)
-                    && !(target == this.getLastHurtByMob() && (this.tickCount - this.getLastHurtByMobTimestamp() < 100))) {
+                    && !this.isRecentAttacker(target)) {
                 return;
             }
 
@@ -2783,9 +2874,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             // During raids, patrolRadius + 12 blocks for PATROL
             double raidBonus = this.isRaidActive() ? 12.0 : 0.0;
 
-            boolean recentAttacker = (target == this.getLastHurtByMob())
-                    && (this.tickCount - this.getLastHurtByMobTimestamp() < 100);
-            if (recentAttacker || this.isOwnerDefenseTarget(target) || this.isTacticalDirectedTarget(target)) {
+            if (this.isRecentAttacker(target) || this.isOwnerDefenseTarget(target) || this.isTacticalDirectedTarget(target)) {
                 super.setTarget(target);
                 return;
             }
@@ -4238,6 +4327,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             this.stopUsingItem();
         }
 
+        this.clearHorseBinding();
+
         this.setCurrentOrder(MercenaryOrder.NEUTRAL);
 
         this.refreshCombatRoleAndGoals();
@@ -4707,6 +4798,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         if (this.isUsingItem()) {
             this.stopUsingItem();
         }
+
+        this.clearHorseBinding();
 
         this.systemForcedNone = false;
 
