@@ -492,7 +492,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             "m16f", "m17", "m18", "m19", "m20",
             "m21f", "m22", "m23", "m24", "m25",
             "m26", "m27f", "m28", "m29", "m30",
-            "m31f", "m32f", "m33", "m34", "m35"
+            "m31f", "m32f", "m33", "m34", "m35",
+            "m36", "m37f", "m38f", "m39f", "m40", "m41f", "m42f"
     };
 
     // Nombres aleatorios para mercenarios (estilo medieval/fantasy vanilla)

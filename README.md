@@ -145,11 +145,19 @@ Ejemplos: follow 1,0 → 1,20 viaje / 1,41 combate; patrol 0,9 → 1,08 / 1,27.
 
 ### IA de combate
 - Goals separados para melee, arco y ballesta.
-- Escudo reactivo, flanqueo variable, strafe en cooldown y retirada con poca vida.
+- Escudo reactivo, strafe en cooldown y retirada con poca vida.
+- Melee estilo vanilla (como lobos/zombis): todos persiguen y golpean al objetivo; un apiñamiento leve es normal al estar adyacentes.
+- Si hay aliados cerca atacando lo mismo, cada mercenario puede buscar un punto lateral cercano (offset suave) para no pelear por el mismo bloque — sin flanqueo táctico ni formaciones.
 - Ranged: evita friendly fire, busca terreno elevado en guardia/patrulla; en órdenes tácticas prioriza acercarse antes de disparar.
 - Golpes críticos (Aprendiz 15 %, Experto 25 %).
 - Leash por rango: abandona persecución si se aleja demasiado del ancla (excepto en autodefensa o comandos tácticos).
 - Comportamiento ampliado durante raids.
+
+### Apariencias (skins)
+- **42 modelos** de mercenario (`m1`–`m42f`), cada uno con 5 variantes por rango (cobre, hierro, oro, esmeralda, diamante).
+- Los modelos con sufijo **`f`** usan brazos delgados (Alex); el resto usa Steve.
+- Última tanda añadida: **m36**, **m37f**, **m38f**, **m39f**, **m40**, **m41f**, **m42f**.
+- Retexturas recientes en modelos existentes: m1, m2, m8, m9, m12, m13, m17, m18, m20, m22, m24, m29, m30, m31f.
 
 ### Defensa de aldeanos
 - **Salvajes:** aggro inmediato contra jugadores que ataquen aldeanos o golems (línea de visión).
@@ -247,4 +255,4 @@ CC0-1.0 — ver archivo `LICENSE`.
 
 ---
 
-**Estado:** v1.0.0 — dispersión táctica, autodefensa de salvajes, desvincular montura al terminar contrato y mejoras de combate a distancia integradas en `main`.
+**Estado:** v1.0.0 — 42 skins de mercenario, retexturas recientes y combate melee estilo vanilla integrados en `main`.
