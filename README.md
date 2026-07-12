@@ -79,8 +79,9 @@ El toggle controla agresión **automática**. Si tú atacas primero, el mercenar
 - Resalta brevemente el objetivo marcado (brillo cliente).
 - Los comandos tácticos no cambian la orden persistente del mercenario.
 - Alcance de mando y de apuntado: 128 bloques.
+- **Persistencia al reentrar:** vincular/desvincular y dar órdenes tácticas siguen funcionando tras salir y volver a entrar al mundo (el cooldown del cliente se reinicia al detectar una sesión nueva).
 - **Dispersión en posición:** varios mercenarios enviados al mismo punto se reparten en un radio corto (0,6–2,6 bloques) en lugar de amontonarse en el mismo bloque.
-- **Ataque táctico:** arqueros y ballesteros se acercan al objetivo antes de disparar; la ballesta no carga fuera de alcance ni sin línea de visión.
+- **Ataque táctico:** arqueros y ballesteros se acercan si no tienen línea de visión; si ya ven al objetivo desde una posición elevada, permanecen y disparan (estilo esqueleto/pillager). La ballesta no carga fuera de alcance ni sin línea de visión.
 - En combate grupal, cada mercenario flanquea desde un ángulo estable para rodear al enemigo.
 
 ### Monturas (v3.1)
@@ -119,6 +120,7 @@ El mensaje muestra el **nombre de la montura** (`[🐴] Relámpago vinculado.`).
 - El lancero se mantiene montado en combate para poder cargar.
 
 **Campamentos salvajes**
+- Los mercenarios del campamento se colocan **después** de terminar la generación del chunk (evita congelar el mundo al crear mundos nuevos).
 - Cada mercenario de campamento spawnea con una montura domada y silla (caballo, burro, mula o camello).
 - ~25 % de los mercenarios del campamento reciben montura; ~40 % de esos empiezan montados, el resto a pie con correa.
 - Al contratar, el vínculo persiste.
@@ -148,7 +150,9 @@ Ejemplos: follow 1,0 → 1,20 viaje / 1,41 combate; patrol 0,9 → 1,08 / 1,27.
 - Escudo reactivo, strafe en cooldown y retirada con poca vida.
 - Melee estilo vanilla (como lobos/zombis): todos persiguen y golpean al objetivo; un apiñamiento leve es normal al estar adyacentes.
 - Si hay aliados cerca atacando lo mismo, cada mercenario puede buscar un punto lateral cercano (offset suave) para no pelear por el mismo bloque — sin flanqueo táctico ni formaciones.
-- Ranged: evita friendly fire, busca terreno elevado en guardia/patrulla; en órdenes tácticas prioriza acercarse antes de disparar.
+- **Ranged (arco/ballesta):** evita friendly fire; con línea de visión y ventaja de altura permanece en su posición y dispara (como esqueletos/pillagers). Cabeza, brazos y arma apuntan al objetivo antes de disparar.
+- **Endermen:** no se consideran amenaza automática; solo se combaten si los provocas, das orden de ataque o el mercenario se defiende. Arqueros/ballesteros cambian a melee contra endermen.
+- **Puertas de valla:** solo se abren cuando el mercenario está pathfinding y va a pasar por ellas (no al estar quieto en guardia).
 - Golpes críticos (Aprendiz 15 %, Experto 25 %).
 - Leash por rango: abandona persecución si se aleja demasiado del ancla (excepto en autodefensa o comandos tácticos).
 - Comportamiento ampliado durante raids.

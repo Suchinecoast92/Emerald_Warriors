@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Correcciones
+- **Catalejo:** las órdenes tácticas vuelven a funcionar tras salir y reentrar al mundo (cooldown del cliente reiniciado al detectar sesión nueva).
+- **Worldgen:** spawn de mercenarios en campamentos diferido al hilo del servidor; evita congelar el mundo al generar chunks nuevos.
+
+### Combate e IA
+- Arqueros/ballesteros mantienen ventaja de altura con línea de visión (estilo esqueleto/pillager).
+- Animación de apuntado ranged alineada con el objetivo (cabeza, brazos, arco/ballesta).
+- Endermen neutrales salvo provocación u orden; arqueros pasan a melee contra endermen.
+- Puertas de valla solo se abren cuando el pathfinding las cruza.
+
 ### Carga con lanza montado
 - Los jinetes con lanza usan el ataque de carga cinético vanilla (1.21.11).
 - Puerto de la IA vanilla `SpearUseGoal` adaptado al mercenario (PathfinderMob) y a la

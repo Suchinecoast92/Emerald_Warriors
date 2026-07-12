@@ -4,7 +4,6 @@ import emeraldwarriors.entity.EmeraldMercenaryEntity;
 import emeraldwarriors.mercenary.MercenaryOrder;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
-import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
@@ -15,18 +14,8 @@ import net.minecraft.world.item.ItemStack;
 import java.util.EnumSet;
 
 /**
- * Vanilla-style crossbow attack goal for mercenaries.
- * Mirrors the vanilla RangedCrossbowAttackGoal logic but works with PathfinderMob
- * instead of requiring Monster.
- *
- * State machine (matches vanilla pillager):
- *   UNCHARGED      → startUsingItem() + setChargingCrossbow(true) → CHARGING
- *   CHARGING       → getTicksUsingItem() >= getChargeDuration() → releaseUsingItem() → CHARGED
- *   CHARGED        → aiming delay (20-40 ticks, vanilla) → READY_TO_ATTACK
- *   READY_TO_ATTACK → CrossbowItem.performShooting() → UNCHARGED
- *
- * Arrow consumption happens via releaseUsingItem() → CrossbowItem.releaseUsing()
- * → tryLoadProjectiles() → mob.getProjectile() (overridden to use mercenaryInventory).
+ * Crossbow combat modeled on vanilla pillager {@code RangedCrossbowAttackGoal}:
+ * look via LookControl, hold high ground with clear LOS instead of descending.
  */
 public class EmeraldCrossbowAttackGoal extends Goal {
 
@@ -40,11 +29,6 @@ public class EmeraldCrossbowAttackGoal extends Goal {
     private int attackDelay = 0;
     private int seeTime     = 0;
 
-    private boolean strafeRight;
-    private int strafeTime = 0;
-
-    private int repositionCooldown;
-
     public EmeraldCrossbowAttackGoal(EmeraldMercenaryEntity mob, double speedModifier,
                                      int attackIntervalMin, float attackRadius) {
         this.mob = mob;
@@ -57,6 +41,10 @@ public class EmeraldCrossbowAttackGoal extends Goal {
     public boolean canUse() {
         LivingEntity target = this.mob.getTarget();
         if (target == null || !target.isAlive()) return false;
+
+        if (CombatTargets.isEnderman(target)) {
+            return false;
+        }
 
         if (this.mob.isNeutralOrder() && !this.mob.isInDisciplineAggro()) {
             LivingEntity lastHurtBy = this.mob.getLastHurtByMob();
@@ -76,6 +64,10 @@ public class EmeraldCrossbowAttackGoal extends Goal {
         LivingEntity target = this.mob.getTarget();
         if (target == null || !target.isAlive()) return false;
 
+        if (CombatTargets.isEnderman(target)) {
+            return false;
+        }
+
         if (this.mob.isNeutralOrder() && !this.mob.isInDisciplineAggro()) {
             LivingEntity lastHurtBy = this.mob.getLastHurtByMob();
             boolean validNeutralTarget = (lastHurtBy != null
@@ -93,14 +85,14 @@ public class EmeraldCrossbowAttackGoal extends Goal {
         return this.mob.getMainHandItem().getItem() instanceof CrossbowItem;
     }
 
-    private net.minecraft.world.InteractionHand getCrossbowHand() {
+    private InteractionHand getCrossbowHand() {
         if (this.mob.getMainHandItem().getItem() instanceof CrossbowItem) {
-            return net.minecraft.world.InteractionHand.MAIN_HAND;
+            return InteractionHand.MAIN_HAND;
         }
         if (this.mob.getOffhandItem().getItem() instanceof CrossbowItem) {
-            return net.minecraft.world.InteractionHand.OFF_HAND;
+            return InteractionHand.OFF_HAND;
         }
-        return net.minecraft.world.InteractionHand.MAIN_HAND;
+        return InteractionHand.MAIN_HAND;
     }
 
     @Override
@@ -110,9 +102,6 @@ public class EmeraldCrossbowAttackGoal extends Goal {
         this.crossbowState = CrossbowState.UNCHARGED;
         this.attackDelay = 0;
         this.seeTime     = 0;
-        this.strafeRight = (this.mob.getId() & 1) == 0;
-        this.strafeTime = 0;
-        this.repositionCooldown = 0;
     }
 
     @Override
@@ -142,86 +131,41 @@ public class EmeraldCrossbowAttackGoal extends Goal {
             return;
         }
 
-        if (this.repositionCooldown > 0) {
-            this.repositionCooldown--;
-        }
-
         double distSqr = this.mob.distanceToSqr(target.getX(), target.getY(), target.getZ());
         boolean canSee  = this.mob.getSensing().hasLineOfSight(target);
         boolean inRange = distSqr <= (double) this.attackRadiusSqr;
-        boolean closingForTactical = this.mob.isTacticalAttackTarget(target) && !inRange;
-        boolean repositioningThisTick = false;
+        boolean holdHighGround = CombatTactics.canHoldGroundAndShoot(this.mob, target, this.attackRadiusSqr);
+        boolean canShoot = inRange || holdHighGround;
 
         if (canSee) ++this.seeTime; else --this.seeTime;
 
-        if (canSee && !closingForTactical) {
-            repositioningThisTick = this.tryRepositionAroundTarget(target, distSqr);
-        }
+        // Vanilla pillager: LookControl aims head/body/crossbow at the target.
+        this.mob.getLookControl().setLookAt(target, 30.0F, 30.0F);
 
-        boolean holdHighGround = CombatTactics.canHoldGroundAndShoot(this.mob, target, distSqr, this.attackRadiusSqr);
-
-        // Fuera de alcance: no cargar ni disparar; acercarse primero (como el melee del grupo).
-        if (!inRange && this.crossbowState != CrossbowState.UNCHARGED) {
+        if (!canShoot && this.crossbowState != CrossbowState.UNCHARGED) {
             this.abortCrossbowCharge();
         }
 
-        if (holdHighGround) {
+        if (holdHighGround || (canSee && inRange)) {
             this.mob.getEffectiveNavigation().stop();
-            this.strafeTime = 0;
-            this.mob.getMoveControl().strafe(0.0F, 0.0F);
-        } else if (!canSee) {
-            CombatTactics.moveToTargetPreservingHeight(this.mob, target, this.getChaseSpeed(target));
-            this.strafeTime = 0;
-            this.mob.getMoveControl().strafe(0.0F, 0.0F);
-        } else if (repositioningThisTick) {
-            this.strafeTime = 0;
-            this.mob.getMoveControl().strafe(0.0F, 0.0F);
-        } else if (!inRange) {
-            CombatTactics.moveToTargetPreservingHeight(this.mob, target, this.getChaseSpeed(target));
-            this.strafeTime = 0;
             this.mob.getMoveControl().strafe(0.0F, 0.0F);
         } else {
-            this.mob.getEffectiveNavigation().stop();
-            if (this.crossbowState == CrossbowState.CHARGED
-                    || this.crossbowState == CrossbowState.READY_TO_ATTACK) {
-                if (this.shouldMaintainHeightAdvantage(target)) {
-                    double heightDiff = this.mob.getY() - target.getY();
-                    if (heightDiff >= 2.0) {
-                        this.strafeTime = Math.max(0, this.strafeTime - 1);
-                    }
-                }
-                this.strafeTime++;
-                if (this.strafeTime >= 40) {
-                    this.strafeTime = 0;
-                    if (this.mob.getRandom().nextFloat() < 0.5F) this.strafeRight = !this.strafeRight;
-                }
-                this.mob.getMoveControl().strafe(0.0F, this.strafeRight ? 0.3F : -0.3F);
-            } else {
-                this.strafeTime = 0;
-                this.mob.getMoveControl().strafe(0.0F, 0.0F);
-            }
+            this.mob.getEffectiveNavigation().moveTo(target, this.getChaseSpeed(target));
+            this.mob.getMoveControl().strafe(0.0F, 0.0F);
         }
-
-        // Asegurar que el cuerpo y la cabeza miren bien al objetivo mientras usa ballesta,
-        // para evitar que el modelo quede de lado y las flechas salgan por los costados.
-        this.faceTarget(target);
 
         ItemStack crossbow = this.mob.getMainHandItem();
 
         switch (this.crossbowState) {
-            // ── Wait for cooldown, then start charging (solo en alcance y con visión) ──
             case UNCHARGED -> {
-                if (this.attackDelay <= 0 && inRange && canSee) {
-                    if (repositioningThisTick) {
-                        break;
-                    }
+                if (this.attackDelay <= 0 && canShoot && canSee) {
+                    CombatTactics.snapAimAt(this.mob, target);
                     InteractionHand hand = this.getCrossbowHand();
                     this.mob.startUsingItem(hand);
                     this.mob.setChargingCrossbow(true);
                     this.crossbowState = CrossbowState.CHARGING;
                 }
             }
-            // ── Charging: wait until getTicksUsingItem >= chargeDuration ──
             case CHARGING -> {
                 if (!this.mob.isUsingItem()) {
                     this.mob.setChargingCrossbow(false);
@@ -231,40 +175,27 @@ public class EmeraldCrossbowAttackGoal extends Goal {
                 int ticksUsing    = this.mob.getTicksUsingItem();
                 int chargeDuration = CrossbowItem.getChargeDuration(crossbow, this.mob);
                 if (ticksUsing >= chargeDuration) {
-                    // Vanilla: releaseUsingItem() calls CrossbowItem.releaseUsing()
-                    // which calls tryLoadProjectiles() → mob.getProjectile() → loads arrow
                     this.mob.releaseUsingItem();
-                    // For useOnRelease items (crossbow), releaseUsingItem may skip clearing
-                    // the use state — explicitly stop to ensure clean transition
                     if (this.mob.isUsingItem()) this.mob.stopUsingItem();
                     this.mob.setChargingCrossbow(false);
                     if (CrossbowItem.isCharged(crossbow)) {
                         this.crossbowState = CrossbowState.CHARGED;
-                        // Vanilla aiming delay: 20 + random(0..19) ticks
                         this.attackDelay = 20 + this.mob.getRandom().nextInt(20);
                     } else {
-                        // Failed to load (no arrows) — stay uncharged
                         this.crossbowState = CrossbowState.UNCHARGED;
                     }
                 }
             }
-            // ── Charged: aiming delay before firing (vanilla behavior) ──
             case CHARGED -> {
-                if (!repositioningThisTick && --this.attackDelay <= 0) {
+                if (--this.attackDelay <= 0) {
                     this.crossbowState = CrossbowState.READY_TO_ATTACK;
                 }
             }
-            // ── Ready: fire when in range and line of sight is clear ───
             case READY_TO_ATTACK -> {
-                if (this.attackDelay <= 0 && inRange && canSee) {
-                    if (repositioningThisTick) {
-                        break;
-                    }
+                if (this.attackDelay <= 0 && canShoot && canSee) {
                     InteractionHand hand = this.getCrossbowHand();
                     float inaccuracy = this.getInaccuracyByRank();
                     if (this.mob.isFriendlyInLineOfFire(target)) {
-                        this.strafeRight = !this.strafeRight;
-                        this.mob.getMoveControl().strafe(0.0F, this.strafeRight ? 0.45F : -0.45F);
                         this.crossbowState = CrossbowState.CHARGED;
                         this.attackDelay = 5;
                         break;
@@ -285,59 +216,6 @@ public class EmeraldCrossbowAttackGoal extends Goal {
         }
     }
 
-    private boolean tryRepositionAroundTarget(LivingEntity target, double distSqr) {
-        if (target instanceof Player) {
-            return false;
-        }
-        if (this.repositionCooldown > 0) {
-            return false;
-        }
-
-        if (this.crossbowState == CrossbowState.CHARGING) {
-            return false;
-        }
-
-        if (CombatTactics.shouldPreserveHeightInGuard(this.mob, target)
-                && this.mob.getSensing().hasLineOfSight(target)
-                && distSqr <= (double) this.attackRadiusSqr) {
-            return false;
-        }
-
-        boolean hasHeightAdvantage = this.shouldMaintainHeightAdvantage(target)
-                && CombatTactics.hasHeightAdvantage(this.mob, target, 2.0);
-
-        double preferredRadius = 10.5D + (double) (this.mob.getId() % 5) * 0.5D;
-        double minRadius = preferredRadius - 1.25D;
-        double maxRadius = preferredRadius + 1.25D;
-
-        double dist = Math.sqrt(distSqr);
-        boolean badDistance = dist < minRadius || dist > maxRadius;
-
-        if (hasHeightAdvantage && distSqr >= 81.0D) {
-            badDistance = false;
-        }
-
-        double desiredDeg = (double) (this.mob.getId() * 31 % 360);
-        double currentDeg = (double) (Mth.atan2(this.mob.getZ() - target.getZ(), this.mob.getX() - target.getX()) * Mth.RAD_TO_DEG);
-        double deltaDeg = (double) Mth.wrapDegrees((float) (desiredDeg - currentDeg));
-        boolean badAngle = Math.abs(deltaDeg) > 25.0D;
-
-        if (!badDistance && !badAngle) {
-            return false;
-        }
-
-        double angleRad = desiredDeg * (double) Mth.DEG_TO_RAD;
-        double x = target.getX() + Math.cos(angleRad) * preferredRadius;
-        double z = target.getZ() + Math.sin(angleRad) * preferredRadius;
-
-        double y = CombatTactics.getRangedNavigationY(this.mob, target);
-        boolean moved = this.mob.getEffectiveNavigation().moveTo(x, y, z, this.getChaseSpeed(target));
-        if (moved) {
-            this.repositionCooldown = 10 + this.mob.getRandom().nextInt(10);
-        }
-        return moved;
-    }
-
     private double getChaseSpeed(LivingEntity target) {
         double speed = this.speedModifier;
         if (target instanceof Player || this.mob.isTacticalAttackTarget(target)) {
@@ -346,7 +224,6 @@ public class EmeraldCrossbowAttackGoal extends Goal {
         return this.mob.resolveNavigationSpeed(speed);
     }
 
-    /** Cancela la carga/disparo preparado para volver a acercarse al objetivo. */
     private void abortCrossbowCharge() {
         if (this.mob.isUsingItem()) {
             this.mob.stopUsingItem();
@@ -394,42 +271,15 @@ public class EmeraldCrossbowAttackGoal extends Goal {
         return false;
     }
 
-    /**
-     * Alinea inmediatamente yaw/pitch del mercenario con el objetivo actual.
-     */
-    private void faceTarget(LivingEntity target) {
-        double dx = target.getX() - this.mob.getX();
-        double dz = target.getZ() - this.mob.getZ();
-        double dy = target.getEyeY() - this.mob.getEyeY();
-        double horizontalDist = Math.sqrt(dx * dx + dz * dz);
-
-        float yaw = (float) (Mth.atan2(dz, dx) * Mth.RAD_TO_DEG) - 90.0F;
-        float pitch = (float) -(Mth.atan2(dy, horizontalDist) * Mth.RAD_TO_DEG);
-
-        this.mob.setYRot(yaw);
-        this.mob.yBodyRot = yaw;
-        this.mob.yHeadRot = yaw;
-        this.mob.setXRot(pitch);
-    }
-
     private void resetCrossbowState() {
         this.mob.setAggressive(false);
         this.seeTime    = 0;
-        this.strafeTime = 0;
         this.attackDelay = 0;
-        this.repositionCooldown = 0;
         this.crossbowState = CrossbowState.UNCHARGED;
         this.mob.getEffectiveNavigation().stop();
         this.mob.getMoveControl().strafe(0.0F, 0.0F);
         this.mob.stopUsingItem();
         this.mob.setChargingCrossbow(false);
-    }
-
-    private boolean shouldMaintainHeightAdvantage(LivingEntity target) {
-        if (CombatTactics.isGuardOrder(this.mob)) {
-            return CombatTactics.shouldPreserveHeightInGuard(this.mob, target);
-        }
-        return this.mob.getRank().ordinal() >= 2 && CombatTactics.hasHeightAdvantage(this.mob, target, 2.0);
     }
 
     private float getInaccuracyByRank() {

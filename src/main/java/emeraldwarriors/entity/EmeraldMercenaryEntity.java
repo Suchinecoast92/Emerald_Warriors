@@ -15,6 +15,8 @@ import emeraldwarriors.entity.ai.ContractRenewWarningGoal;
 import emeraldwarriors.entity.ai.MercenaryIdleStrollGoal;
 import emeraldwarriors.entity.ai.NeutralWanderGoal;
 import emeraldwarriors.entity.ai.OpenFenceGateGoal;
+import emeraldwarriors.entity.ai.CombatTargets;
+import emeraldwarriors.entity.ai.CombatTactics;
 import emeraldwarriors.entity.ai.OwnerHurtTargetGoal;
 import emeraldwarriors.entity.ai.PatrolAroundPointGoal;
 import emeraldwarriors.entity.ai.RetreatLowHpGoal;
@@ -2283,6 +2285,16 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     }
 
 
+    public boolean shouldEngageEnderman(LivingEntity target) {
+        if (!CombatTargets.isEnderman(target)) {
+            return true;
+        }
+        return this.isOwnerDirectedTarget(target)
+                || this.isTacticalDirectedTarget(target)
+                || this.isRecentAttacker(target)
+                || this.isBrotherhoodAssistTarget(target);
+    }
+
     public boolean canInitiatePvpAgainst(Player player) {
         if (player == null || player.isCreative() || player.isSpectator()) {
             return false;
@@ -2868,6 +2880,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                 }
             }
 
+            if (CombatTargets.isEnderman(target) && !this.shouldEngageEnderman(target)) {
+                return;
+            }
+
             MercenaryOrder order = this.getCurrentOrder();
             // FOLLOW: NearestAttackableTargetGoal already disabled via refreshTargetGoalsByOrder().
             // Defensive goals (EmeraldProtectOwnerGoal, OwnerHurtTargetGoal, HurtByTargetGoal)
@@ -3014,7 +3030,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         if (this.getVehicle() instanceof AbstractHorse) {
             return (int) MOUNTED_HEAD_PITCH_LIMIT;
         }
-        return super.getMaxHeadXRot();
+        // Allow steep up/down aim like vanilla skeletons/pillagers on cliffs.
+        return 90;
     }
 
     private void syncMountedRotation(AbstractHorse horse) {
@@ -3241,6 +3258,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             } else if (this.bowAttackGoal != null) {
                 this.goalSelector.addGoal(2, this.bowAttackGoal);
             }
+            if (this.meleeAttackGoal != null) {
+                this.goalSelector.addGoal(3, this.meleeAttackGoal);
+            }
         } else if (this.meleeAttackGoal != null) {
             this.goalSelector.addGoal(2, this.meleeAttackGoal);
         }
@@ -3257,6 +3277,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         }
 
         if (target instanceof AbstractVillager || target instanceof IronGolem) {
+            return;
+        }
+
+        if (CombatTargets.isEnderman(target)) {
             return;
         }
 
@@ -3843,9 +3867,42 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         return false;
     }
 
+    /**
+     * After AI/movement, lock body toward the combat target while drawing or aiming
+     * ranged weapons so the bow/crossbow pose matches vanilla skeleton/pillager.
+     */
+    private void applyRangedAimRotation() {
+        if (this.level().isClientSide() || this.getVehicle() instanceof AbstractHorse) {
+            return;
+        }
+        if (!this.isActivelyAimingRangedWeapon()) {
+            return;
+        }
+        LivingEntity target = this.getTarget();
+        if (target == null || !target.isAlive()) {
+            return;
+        }
+        CombatTactics.snapAimAt(this, target);
+    }
+
+    private boolean isActivelyAimingRangedWeapon() {
+        if (this.isUsingItem()) {
+            var item = this.getUseItem().getItem();
+            if (item instanceof BowItem || item instanceof CrossbowItem) {
+                return true;
+            }
+        }
+        if (this.isChargingCrossbow()) {
+            return true;
+        }
+        ItemStack main = this.getMainHandItem();
+        return main.getItem() instanceof CrossbowItem && CrossbowItem.isCharged(main);
+    }
+
     @Override
     public void aiStep() {
         super.aiStep();
+        this.applyRangedAimRotation();
         this.updateSwingTime();
 
         if (!(this.level() instanceof ServerLevel serverLevel)) {
@@ -4217,6 +4274,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         }
         
         // Attack hostile mobs, illagers, etc.
+        if (CombatTargets.isEnderman(entity) && !this.shouldEngageEnderman(entity)) {
+            return false;
+        }
+
         return entity instanceof net.minecraft.world.entity.monster.Monster ||
                entity instanceof net.minecraft.world.entity.monster.Enemy ||
                entity.getType().toString().contains("illager") ||

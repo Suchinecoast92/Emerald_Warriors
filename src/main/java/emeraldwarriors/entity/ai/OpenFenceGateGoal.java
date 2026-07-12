@@ -1,8 +1,10 @@
 package emeraldwarriors.entity.ai;
 
+import emeraldwarriors.entity.EmeraldMercenaryEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.entity.ai.navigation.PathNavigation;
 import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.FenceGateBlock;
@@ -10,9 +12,12 @@ import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.EnumSet;
 
+/**
+ * Opens fence gates only when the mob is actively pathing through them.
+ * Does not scan nearby gates while idle (e.g. guard posts ringed with fence gates).
+ */
 public class OpenFenceGateGoal extends Goal {
 
-    private static final int SEARCH_RADIUS = 5;
     private static final int PATH_LOOKAHEAD = 6;
     private static final int MAX_OPEN_TICKS = 80;
 
@@ -35,10 +40,13 @@ public class OpenFenceGateGoal extends Goal {
             return false;
         }
 
-        BlockPos found = this.findGateOnPath();
-        if (found == null) {
-            found = this.findClosedGateNear(this.mob.blockPosition(), SEARCH_RADIUS);
+        PathNavigation navigation = this.getNavigation();
+        Path path = navigation.getPath();
+        if (path == null || path.isDone() || !navigation.isInProgress()) {
+            return false;
         }
+
+        BlockPos found = this.findGateOnPath(path);
         if (found == null) {
             return false;
         }
@@ -59,6 +67,11 @@ public class OpenFenceGateGoal extends Goal {
             return false;
         }
         if (this.openTicks >= MAX_OPEN_TICKS) {
+            return false;
+        }
+
+        PathNavigation navigation = this.getNavigation();
+        if (!navigation.isInProgress()) {
             return false;
         }
 
@@ -105,12 +118,14 @@ public class OpenFenceGateGoal extends Goal {
         this.openTicks = 0;
     }
 
-    private BlockPos findGateOnPath() {
-        Path path = this.mob.getNavigation().getPath();
-        if (path == null || path.isDone()) {
-            return null;
+    private PathNavigation getNavigation() {
+        if (this.mob instanceof EmeraldMercenaryEntity mercenary) {
+            return mercenary.getEffectiveNavigation();
         }
+        return this.mob.getNavigation();
+    }
 
+    private BlockPos findGateOnPath(Path path) {
         Level level = this.mob.level();
         int start = path.getNextNodeIndex();
         int end = Math.min(start + PATH_LOOKAHEAD, path.getNodeCount());

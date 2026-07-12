@@ -3,7 +3,6 @@ package emeraldwarriors.entity.ai;
 import emeraldwarriors.entity.EmeraldMercenaryEntity;
 import emeraldwarriors.mercenary.MercenaryOrder;
 import net.minecraft.core.BlockPos;
-import net.minecraft.util.Mth;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.entity.player.Player;
@@ -11,6 +10,11 @@ import net.minecraft.world.item.BowItem;
 
 import java.util.EnumSet;
 
+/**
+ * Bow combat modeled on vanilla {@code RangedBowAttackGoal} (skeleton):
+ * look via LookControl, hold and shoot when in range with LOS,
+ * especially from high ground instead of pathing downhill.
+ */
 public class EmeraldBowAttackGoal extends Goal {
 
     private final EmeraldMercenaryEntity mob;
@@ -21,12 +25,6 @@ public class EmeraldBowAttackGoal extends Goal {
     private int attackTime;
     private int seeTime;
     private int useTime;
-
-    // Suave movimiento lateral mientras dispara, para que no sea un blanco estático
-    private boolean strafeRight;
-    private int strafeTime;
-
-    private int repositionCooldown;
 
     public EmeraldBowAttackGoal(EmeraldMercenaryEntity mob, double speedModifier, int attackIntervalMin, float attackRadius) {
         this.mob = mob;
@@ -40,6 +38,10 @@ public class EmeraldBowAttackGoal extends Goal {
     public boolean canUse() {
         LivingEntity target = this.mob.getTarget();
         if (target == null || !target.isAlive()) {
+            return false;
+        }
+
+        if (CombatTargets.isEnderman(target)) {
             return false;
         }
 
@@ -60,6 +62,10 @@ public class EmeraldBowAttackGoal extends Goal {
     public boolean canContinueToUse() {
         LivingEntity target = this.mob.getTarget();
         if (target == null || !target.isAlive()) {
+            return false;
+        }
+
+        if (CombatTargets.isEnderman(target)) {
             return false;
         }
 
@@ -84,9 +90,6 @@ public class EmeraldBowAttackGoal extends Goal {
     public void start() {
         super.start();
         this.mob.setAggressive(true);
-        this.strafeRight = (this.mob.getId() & 1) == 0;
-        this.strafeTime = 0;
-        this.repositionCooldown = 0;
     }
 
     @Override
@@ -96,9 +99,6 @@ public class EmeraldBowAttackGoal extends Goal {
         this.seeTime = 0;
         this.attackTime = 0;
         this.useTime = 0;
-        this.strafeTime = 0;
-        this.repositionCooldown = 0;
-        // Asegurarse de que no quede ningún movimiento lateral pendiente
         this.mob.getMoveControl().strafe(0.0F, 0.0F);
         this.mob.stopUsingItem();
     }
@@ -112,8 +112,6 @@ public class EmeraldBowAttackGoal extends Goal {
     public void tick() {
         LivingEntity target = this.mob.getTarget();
         if (target == null) {
-            // Sin objetivo: cancelar cualquier strafe residual
-            this.strafeTime = 0;
             this.mob.getMoveControl().strafe(0.0F, 0.0F);
             return;
         }
@@ -128,98 +126,40 @@ public class EmeraldBowAttackGoal extends Goal {
             return;
         }
 
-        if (this.repositionCooldown > 0) {
-            this.repositionCooldown--;
-        }
-
         double distSqr = this.mob.distanceToSqr(target.getX(), target.getY(), target.getZ());
         boolean canSee = this.mob.getSensing().hasLineOfSight(target);
+        boolean inRange = distSqr <= (double) this.attackRadiusSqr;
+        boolean holdHighGround = CombatTactics.canHoldGroundAndShoot(this.mob, target, this.attackRadiusSqr);
         boolean isUsingBow = this.mob.isUsingItem() && this.mob.getUseItem().getItem() instanceof BowItem;
-        boolean closingForTactical = this.mob.isTacticalAttackTarget(target)
-                && distSqr > (double) this.attackRadiusSqr;
-        boolean repositioningThisTick = false;
 
-        if (canSee && !isUsingBow && !closingForTactical) {
-            repositioningThisTick = this.tryRepositionAroundTarget(target, distSqr);
-        }
-
-        // Contador de visibilidad similar al esqueleto: positivo si ve, negativo si no
         if (canSee) {
             ++this.seeTime;
         } else {
             --this.seeTime;
         }
 
-        boolean holdHighGround = CombatTactics.canHoldGroundAndShoot(this.mob, target, distSqr, this.attackRadiusSqr);
+        // Vanilla skeleton: lookControl aims head/body (and therefore bow arms) at the target.
+        this.mob.getLookControl().setLookAt(target, 30.0F, 30.0F);
 
-        if (holdHighGround) {
+        if (holdHighGround || (canSee && inRange)) {
+            // Clear shot: stay put and face the target (no strafe — it rotates the body away).
             this.mob.getEffectiveNavigation().stop();
-            this.strafeTime = 0;
-            this.mob.getMoveControl().strafe(0.0F, 0.0F);
-        } else if (!canSee) {
-            CombatTactics.moveToTargetPreservingHeight(this.mob, target, this.getChaseSpeed(target));
-            this.strafeTime = 0;
-            this.mob.getMoveControl().strafe(0.0F, 0.0F);
-        } else if (repositioningThisTick) {
-            this.strafeTime = 0;
-            this.mob.getMoveControl().strafe(0.0F, 0.0F);
-        } else if (distSqr > (double) this.attackRadiusSqr) {
-            CombatTactics.moveToTargetPreservingHeight(this.mob, target, this.getChaseSpeed(target));
-            this.strafeTime = 0;
             this.mob.getMoveControl().strafe(0.0F, 0.0F);
         } else {
-            // Dentro de rango y con visión: detener el pathing y hacer un leve strafe tipo vanilla
-            this.mob.getEffectiveNavigation().stop();
-            
-            // SENTINEL+ Tactical Height Advantage - maintain high ground with ranged weapons
-            if (this.shouldMaintainHeightAdvantage(target)) {
-                double heightDifference = this.mob.getY() - target.getY();
-                // If we have significant height advantage (2+ blocks), avoid unnecessary movement
-                if (heightDifference >= 2.0) {
-                    // Reduce strafe movement to maintain advantageous position
-                    this.strafeTime = Math.max(0, this.strafeTime - 1);
-                }
-            }
-
-            if (this.seeTime >= 10 && isUsingBow) { // esperar un poco y solo mientras carga el arco
-                this.strafeTime++;
-
-                if (this.strafeTime >= 40) {
-                    this.strafeTime = 0;
-                    // Cambiar de lado ocasionalmente
-                    if (this.mob.getRandom().nextFloat() < 0.5F) {
-                        this.strafeRight = !this.strafeRight;
-                    }
-                }
-
-                float sideways = this.strafeRight ? 0.3F : -0.3F;
-                // Solo movimiento lateral suave; sin avanzar/retroceder para evitar teleports raros
-                this.mob.getMoveControl().strafe(0.0F, sideways);
-            } else {
-                this.strafeTime = 0;
-                // Detener cualquier strafe residual cuando no hay amenaza inmediata
-                this.mob.getMoveControl().strafe(0.0F, 0.0F);
-            }
+            this.mob.getEffectiveNavigation().moveTo(target, this.getChaseSpeed(target));
+            this.mob.getMoveControl().strafe(0.0F, 0.0F);
         }
 
-        // Forzar que el cuerpo y la cabeza miren realmente hacia el objetivo,
-        // para que el arco se apunte hacia delante (no de lado).
-        this.faceTarget(target);
-
         if (this.mob.isUsingItem()) {
-            // Si pierde la visión durante un rato, cancelar la carga
             if (!canSee && this.seeTime < -20) {
                 this.mob.stopUsingItem();
                 this.useTime = 0;
             } else {
                 this.useTime++;
-                if (this.useTime >= 20 && canSee && target.isAlive()) {
-                    if (repositioningThisTick) {
-                        return;
-                    }
+                if (this.useTime >= 20 && canSee && target.isAlive()
+                        && (inRange || holdHighGround)) {
                     if (this.mob.isFriendlyInLineOfFire(target)) {
-                        this.strafeRight = !this.strafeRight;
-                        this.mob.getMoveControl().strafe(0.0F, this.strafeRight ? 0.45F : -0.45F);
+                        // Wait for a clear shot instead of strafing (strafe breaks bow pose).
                     } else {
                         this.mob.stopUsingItem();
                         this.mob.performRangedAttack(target, BowItem.getPowerForTime(this.useTime));
@@ -233,89 +173,12 @@ public class EmeraldBowAttackGoal extends Goal {
                 this.attackTime--;
             }
 
-            if (this.attackTime <= 0 && canSee && distSqr <= (double) this.attackRadiusSqr) {
-                if (repositioningThisTick) {
-                    return;
-                }
+            if (this.attackTime <= 0 && canSee && (inRange || holdHighGround)) {
+                CombatTactics.snapAimAt(this.mob, target);
                 this.mob.startUsingItem(net.minecraft.world.InteractionHand.MAIN_HAND);
                 this.useTime = 0;
             }
         }
-    }
-
-    /**
-     * Alinea inmediatamente yaw/pitch del mercenario con el objetivo,
-     * similar a como se hace en ShieldAgainstCreeperGoal.
-     */
-    private void faceTarget(LivingEntity target) {
-        double dx = target.getX() - this.mob.getX();
-        double dz = target.getZ() - this.mob.getZ();
-        double dy = target.getEyeY() - this.mob.getEyeY();
-        double horizontalDist = Math.sqrt(dx * dx + dz * dz);
-
-        float yaw = (float) (Mth.atan2(dz, dx) * Mth.RAD_TO_DEG) - 90.0F;
-        float pitch = (float) -(Mth.atan2(dy, horizontalDist) * Mth.RAD_TO_DEG);
-
-        this.mob.setYRot(yaw);
-        this.mob.yBodyRot = yaw;
-        this.mob.yHeadRot = yaw;
-        this.mob.setXRot(pitch);
-    }
-    
-    private boolean shouldMaintainHeightAdvantage(LivingEntity target) {
-        if (CombatTactics.isGuardOrder(this.mob)) {
-            return CombatTactics.shouldPreserveHeightInGuard(this.mob, target);
-        }
-        return this.mob.getRank().ordinal() >= 2 && CombatTactics.hasHeightAdvantage(this.mob, target, 2.0);
-    }
-
-    private boolean tryRepositionAroundTarget(LivingEntity target, double distSqr) {
-        if (target instanceof Player) {
-            return false;
-        }
-        if (this.repositionCooldown > 0) {
-            return false;
-        }
-
-        if (CombatTactics.shouldPreserveHeightInGuard(this.mob, target)
-                && this.mob.getSensing().hasLineOfSight(target)
-                && distSqr <= (double) this.attackRadiusSqr) {
-            return false;
-        }
-
-        boolean hasHeightAdvantage = this.shouldMaintainHeightAdvantage(target)
-                && CombatTactics.hasHeightAdvantage(this.mob, target, 2.0);
-
-        double preferredRadius = 10.5D + (double) (this.mob.getId() % 5) * 0.5D;
-        double minRadius = preferredRadius - 1.25D;
-        double maxRadius = preferredRadius + 1.25D;
-
-        double dist = Math.sqrt(distSqr);
-        boolean badDistance = dist < minRadius || dist > maxRadius;
-
-        if (hasHeightAdvantage && distSqr >= 81.0D) {
-            badDistance = false;
-        }
-
-        double desiredDeg = (double) (this.mob.getId() * 31 % 360);
-        double currentDeg = (double) (Mth.atan2(this.mob.getZ() - target.getZ(), this.mob.getX() - target.getX()) * Mth.RAD_TO_DEG);
-        double deltaDeg = (double) Mth.wrapDegrees((float) (desiredDeg - currentDeg));
-        boolean badAngle = Math.abs(deltaDeg) > 25.0D;
-
-        if (!badDistance && !badAngle) {
-            return false;
-        }
-
-        double angleRad = desiredDeg * (double) Mth.DEG_TO_RAD;
-        double x = target.getX() + Math.cos(angleRad) * preferredRadius;
-        double z = target.getZ() + Math.sin(angleRad) * preferredRadius;
-
-        double y = CombatTactics.getRangedNavigationY(this.mob, target);
-        boolean moved = this.mob.getEffectiveNavigation().moveTo(x, y, z, this.getChaseSpeed(target));
-        if (moved) {
-            this.repositionCooldown = 10 + this.mob.getRandom().nextInt(10);
-        }
-        return moved;
     }
 
     private double getChaseSpeed(LivingEntity target) {

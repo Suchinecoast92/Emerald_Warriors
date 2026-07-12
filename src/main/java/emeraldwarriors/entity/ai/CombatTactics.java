@@ -3,10 +3,11 @@ package emeraldwarriors.entity.ai;
 import emeraldwarriors.entity.EmeraldMercenaryEntity;
 import emeraldwarriors.mercenary.MercenaryOrder;
 import net.minecraft.core.BlockPos;
+import net.minecraft.util.Mth;
 import net.minecraft.world.entity.LivingEntity;
 
 /**
- * Shared vanilla-style tactical helpers for GUARD positioning and height advantage.
+ * Shared helpers for GUARD return and vanilla-style ranged high-ground holds.
  */
 public final class CombatTactics {
     private CombatTactics() {
@@ -21,58 +22,55 @@ public final class CombatTactics {
     }
 
     /**
-     * True when the merc should avoid descending: elevated guard post or 2+ blocks above target.
+     * Vanilla-style hold: clear LOS, weapon in range (horizontal), and elevated.
+     * Matches skeleton/pillager staying on cliffs/walls instead of descending.
      */
-    public static boolean shouldPreserveHeightInGuard(EmeraldMercenaryEntity mob, LivingEntity target) {
-        if (!isGuardOrder(mob)) {
+    public static boolean canHoldGroundAndShoot(EmeraldMercenaryEntity mob, LivingEntity target,
+                                                float attackRadiusSqr) {
+        if (target == null || !mob.getSensing().hasLineOfSight(target)) {
             return false;
         }
-        BlockPos guard = mob.getGuardPos();
-        double postRadius = mob.getRank().getGuardRadius() + 2.0;
-        double postRadiusSqr = postRadius * postRadius;
-        boolean nearElevatedPost = mob.getY() >= guard.getY() + 1.5
-                && mob.distanceToSqr(guard.getX() + 0.5, mob.getY(), guard.getZ() + 0.5) <= postRadiusSqr;
-        return nearElevatedPost || hasHeightAdvantage(mob, target, 2.0);
-    }
-
-    /**
-     * Y level for ranged pathing: never path below current high ground while guarding.
-     */
-    public static double getRangedNavigationY(EmeraldMercenaryEntity mob, LivingEntity target) {
-        if (!shouldPreserveHeightInGuard(mob, target)) {
-            return target.getY();
+        if (!hasHeightAdvantage(mob, target, 1.0)) {
+            return false;
         }
-        BlockPos guard = mob.getGuardPos();
-        double floorY = guard != null ? guard.getY() : mob.getY();
-        return Math.max(mob.getY(), Math.max(floorY, target.getY()));
-    }
-
-    public static boolean canHoldGroundAndShoot(EmeraldMercenaryEntity mob, LivingEntity target,
-                                                double distSqr, float attackRadiusSqr) {
-        return shouldPreserveHeightInGuard(mob, target)
-                && mob.getSensing().hasLineOfSight(target)
-                && distSqr <= (double) attackRadiusSqr;
+        double dx = target.getX() - mob.getX();
+        double dz = target.getZ() - mob.getZ();
+        return dx * dx + dz * dz <= (double) attackRadiusSqr;
     }
 
     /**
      * When returning to guard post, stay on nearby high ground instead of descending.
      */
+    /**
+     * Snap body/head pitch toward target after AI movement (fixes bow pose when strafe
+     * or pathing left the merc facing the wrong way).
+     */
+    public static void snapAimAt(EmeraldMercenaryEntity mob, LivingEntity target) {
+        if (target == null || !target.isAlive()) {
+            return;
+        }
+        double dx = target.getX() - mob.getX();
+        double dz = target.getZ() - mob.getZ();
+        double dy = target.getEyeY() - mob.getEyeY();
+        double horizontalDist = Math.sqrt(dx * dx + dz * dz);
+
+        float yaw = (float) (Mth.atan2(dz, dx) * Mth.RAD_TO_DEG) - 90.0F;
+        float pitch = (float) -(Mth.atan2(dy, horizontalDist) * Mth.RAD_TO_DEG);
+        pitch = Mth.clamp(pitch, -mob.getMaxHeadXRot(), mob.getMaxHeadXRot());
+
+        mob.setYRot(yaw);
+        mob.yBodyRot = yaw;
+        mob.yHeadRot = yaw;
+        mob.setXRot(pitch);
+    }
+
     public static double getGuardReturnY(EmeraldMercenaryEntity mob, BlockPos guard) {
         double guardX = guard.getX() + 0.5;
         double guardZ = guard.getZ() + 0.5;
         double horizontalDistSqr = mob.distanceToSqr(guardX, mob.getY(), guardZ);
-        if (horizontalDistSqr <= 16.0 && mob.getY() > guard.getY() + 1.5) {
+        if (horizontalDistSqr <= 16.0 && mob.getY() > guard.getY() + 0.5) {
             return mob.getY();
         }
         return guard.getY();
-    }
-
-    public static void moveToTargetPreservingHeight(EmeraldMercenaryEntity mob, LivingEntity target, double speed) {
-        double navSpeed = mob.resolveNavigationSpeed(speed);
-        if (shouldPreserveHeightInGuard(mob, target)) {
-            mob.getEffectiveNavigation().moveTo(target.getX(), getRangedNavigationY(mob, target), target.getZ(), navSpeed);
-        } else {
-            mob.getEffectiveNavigation().moveTo(target, navSpeed);
-        }
     }
 }

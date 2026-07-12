@@ -101,12 +101,16 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
     }
 
     private static void trySpawnCampMercenaries(WorldGenLevel level, BlockPos center, RandomSource random) {
+        if (!(level.getLevel() instanceof ServerLevel serverLevel)) {
+            return;
+        }
+
         int count = 1 + (random.nextFloat() < 0.35F ? 1 : 0);
-        List<EmeraldMercenaryEntity> spawned = new ArrayList<>();
+        List<BlockPos> spawnPositions = new ArrayList<>();
 
         for (int i = 0; i < count; i++) {
             // Prefer spawning close to the campfire (center)
-            boolean spawnedOne = false;
+            BlockPos found = null;
             for (int attempts = 0; attempts < 40; attempts++) {
                 int dx = random.nextInt(9) - 4;   // [-4..4]
                 int dz = random.nextInt(9) - 4;
@@ -127,16 +131,12 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
                     continue;
                 }
 
-                var entity = ModEntities.EMERALD_MERCENARY.spawn(level.getLevel(), surface, EntitySpawnReason.STRUCTURE);
-                if (entity instanceof EmeraldMercenaryEntity merc) {
-                    spawned.add(merc);
-                }
-                spawnedOne = true;
+                found = surface.immutable();
                 break;
             }
 
             // Fallback: if camp objects/terrain block close spawns, use the old wider area
-            if (!spawnedOne) {
+            if (found == null) {
                 for (int attempts = 0; attempts < 30; attempts++) {
                     int dx = random.nextInt(11) - 5;
                     int dz = random.nextInt(11) - 5;
@@ -153,20 +153,37 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
                         continue;
                     }
 
-                    var entity = ModEntities.EMERALD_MERCENARY.spawn(level.getLevel(), surface, EntitySpawnReason.STRUCTURE);
-                    if (entity instanceof EmeraldMercenaryEntity merc) {
-                        spawned.add(merc);
-                    }
+                    found = surface.immutable();
                     break;
                 }
             }
-        }
 
-        if (level.getLevel() instanceof ServerLevel serverLevel) {
-            for (EmeraldMercenaryEntity merc : spawned) {
-                MercenaryMountHelper.setupWildCampMount(serverLevel, merc, center, random);
+            if (found != null) {
+                spawnPositions.add(found);
             }
         }
+
+        if (spawnPositions.isEmpty()) {
+            return;
+        }
+
+        // Spawning entities during worldgen deadlocks the chunk system:
+        // EntityType.spawn -> getCurrentDifficultyAt -> getChunk blocks the worldgen
+        // worker while it waits for a chunk that can only be produced on the server
+        // thread. Positions are chosen here (safe: reads local terrain), but the actual
+        // entity creation is deferred to the server thread, mirroring how mounts are set
+        // up (see MercenaryMountHelper.scheduleWildMountSetup).
+        BlockPos campCenter = center.immutable();
+        long mountSeed = random.nextLong();
+        serverLevel.getServer().execute(() -> {
+            RandomSource mountRandom = new LegacyRandomSource(mountSeed);
+            for (BlockPos pos : spawnPositions) {
+                var entity = ModEntities.EMERALD_MERCENARY.spawn(serverLevel, pos, EntitySpawnReason.STRUCTURE);
+                if (entity instanceof EmeraldMercenaryEntity merc) {
+                    MercenaryMountHelper.setupWildCampMount(serverLevel, merc, campCenter, mountRandom);
+                }
+            }
+        });
     }
 
     private record WoodPalette(Block slab, Block fence) {

@@ -42,7 +42,15 @@ public final class MercenarySpyglassClient {
             if (!SpyglassGroupManager.isSpyglass(useItem)) {
                 return false;
             }
-            if (player.tickCount - lastCommandTick < COMMAND_COOLDOWN_TICKS) {
+            int now = player.tickCount;
+            // Tras salir y volver a entrar al mundo, el LocalPlayer reinicia tickCount a 0,
+            // pero este campo estático conserva el valor de la sesión anterior. Sin este
+            // ajuste, el cooldown quedaría "activo" durante minutos y las órdenes no se
+            // enviarían (aunque vincular/desvincular sí funciona porque no usa este cooldown).
+            if (now < lastCommandTick) {
+                lastCommandTick = now - COMMAND_COOLDOWN_TICKS;
+            }
+            if (now - lastCommandTick < COMMAND_COOLDOWN_TICKS) {
                 return true;
             }
 

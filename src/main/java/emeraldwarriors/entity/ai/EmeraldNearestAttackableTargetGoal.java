@@ -91,6 +91,11 @@ public class EmeraldNearestAttackableTargetGoal extends TargetGoal {
             return false;
         }
 
+        // Endermen are neutral unless the owner directs an attack or the merc is retaliating.
+        if (CombatTargets.isEnderman(entity)) {
+            return false;
+        }
+
         // Mobs hostiles siempre atacables
         if (entity instanceof Monster) {
             return true;
