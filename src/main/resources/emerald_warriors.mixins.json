@@ -3,6 +3,7 @@
 	"package": "emeraldwarriors.mixin",
 	"compatibilityLevel": "JAVA_21",
 	"mixins": [
+		"AbstractHorseRiderMixin",
 		"ExampleMixin",
 		"InstrumentItemMixin",
 		"SpawnPlacementsInvoker"

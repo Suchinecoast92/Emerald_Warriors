@@ -108,6 +108,7 @@ El mensaje muestra el **nombre de la montura** (`[🐴] Relámpago vinculado.`).
 - **Neutral:** mayormente a pie.
 - A pie y cerca del dueño: puede llevar la montura con correa (estilo errante + llamas).
 - Anti-teleport: camina hasta la montura (~2,5 bloques) antes de subir.
+- **Control del jinete:** el mercenario montado dirige la montura (patrulla, persecución y combate). Vanilla solo reconoce a jugadores como conductores; el mod declara al mercenario como jinete controlador para desactivar la IA de deambular del caballo/camello.
 
 **Carga con lanza (jinete)**
 - Los mercenarios montados con **lanza** ejecutan el ataque de carga cinético vanilla.
@@ -123,6 +124,7 @@ El mensaje muestra el **nombre de la montura** (`[🐴] Relámpago vinculado.`).
 - Los mercenarios del campamento se colocan **después** de terminar la generación del chunk (evita congelar el mundo al crear mundos nuevos).
 - Cada mercenario de campamento spawnea con una montura domada y silla (caballo, burro, mula o camello).
 - ~25 % de los mercenarios del campamento reciben montura; ~40 % de esos empiezan montados, el resto a pie con correa.
+- Los salvajes montados **controlan** su montura: patrullan y persiguen a caballo (antes solo iban de pasajeros y el caballo deambulaba solo).
 - Al contratar, el vínculo persiste.
 - Al **morir**, **expirar el contrato** o **romper contrato por disciplina**, el mercenario se desmonta y suelta la montura vinculada.
 
@@ -259,4 +261,4 @@ CC0-1.0 — ver archivo `LICENSE`.
 
 ---
 
-**Estado:** v1.0.0 — 42 skins de mercenario, retexturas recientes y combate melee estilo vanilla integrados en `main`.
+**Estado:** v1.0.0 — 42 skins, combate melee/ranged estilo vanilla y control de montura por jinete mercenario en `main`.

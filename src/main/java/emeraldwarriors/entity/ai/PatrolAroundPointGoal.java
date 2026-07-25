@@ -38,7 +38,7 @@ public class PatrolAroundPointGoal extends Goal {
             this.cooldown--;
             return false;
         }
-        return this.mercenary.getNavigation().isDone();
+        return this.mercenary.getEffectiveNavigation().isDone();
     }
 
     @Override
@@ -50,7 +50,7 @@ public class PatrolAroundPointGoal extends Goal {
         if (this.mercenary.getTarget() != null && this.mercenary.getTarget().isAlive()) {
             return false;
         }
-        return !this.mercenary.getNavigation().isDone();
+        return !this.mercenary.getEffectiveNavigation().isDone();
     }
 
     @Override

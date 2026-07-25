@@ -5,6 +5,7 @@
 ### Correcciones
 - **Catalejo:** las órdenes tácticas vuelven a funcionar tras salir y reentrar al mundo (cooldown del cliente reiniciado al detectar sesión nueva).
 - **Worldgen:** spawn de mercenarios en campamentos diferido al hilo del servidor; evita congelar el mundo al generar chunks nuevos.
+- **Monturas:** el mercenario montado es el jinete controlador (mixin en `AbstractHorse`); la montura ya no deambula por su cuenta. Patrulla/deambular usan la navegación de la montura al ir a caballo.
 
 ### Combate e IA
 - Arqueros/ballesteros mantienen ventaja de altura con línea de visión (estilo esqueleto/pillager).
