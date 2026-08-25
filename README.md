@@ -168,7 +168,8 @@ Ejemplos: follow 1,0 → 1,20 viaje / 1,41 combate; patrol 0,9 → 1,08 / 1,27.
 ### Defensa de aldeanos
 - **Salvajes:** aggro inmediato contra jugadores que ataquen aldeanos o golems (línea de visión).
 - **Contratados en GUARD/PATROL:** defienden contra mobs hostiles; ignoran al dueño atacando aldeanos.
-- **FOLLOW / NEUTRAL:** sin defensa proactiva de aldeanos.
+- **FOLLOW en raid:** también pelean a quien esté atacando (o yendo a por) aldeanos/golems cercanos; pueden dejar un combate lejano para salvar la aldea.
+- **FOLLOW / NEUTRAL (fuera de raid):** sin defensa proactiva de aldeanos.
 
 ### Disciplina del dueño
 Si golpeas a tu propio mercenario contratado (melee directo):

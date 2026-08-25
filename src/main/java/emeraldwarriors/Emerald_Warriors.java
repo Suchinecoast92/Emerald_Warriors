@@ -18,6 +18,8 @@ import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.animal.golem.IronGolem;
 import net.minecraft.world.entity.npc.villager.AbstractVillager;
+import emeraldwarriors.mount.MercenaryMounts;
+import net.minecraft.world.entity.animal.equine.AbstractHorse;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.entity.projectile.Projectile;
 
@@ -89,11 +91,14 @@ public class Emerald_Warriors implements ModInitializer {
 						return false;
 					}
 				}
-				if (entity instanceof AbstractVillager || entity instanceof IronGolem) {
-					return false;
-				}
-			}
-			// Also catch indirect damage (arrows): directEntity is the arrow, entity is who fired it
+                if (entity instanceof AbstractVillager || entity instanceof IronGolem) {
+                    return false;
+                }
+                if (entity instanceof AbstractHorse horse && MercenaryMounts.isAlliedMercenaryMount(horse, (EmeraldMercenaryEntity) attacker)) {
+                    return false;
+                }
+            }
+            // Also catch indirect damage (arrows): directEntity is the arrow, entity is who fired it
 			var directEntity = source.getDirectEntity();
 			if (directEntity != null && directEntity != attacker) {
 				var ownerEntity = source.getEntity();
@@ -112,6 +117,10 @@ public class Emerald_Warriors implements ModInitializer {
 						}
 					}
 					if (entity instanceof AbstractVillager || entity instanceof IronGolem) {
+						return false;
+					}
+					if (entity instanceof AbstractHorse horse
+							&& MercenaryMounts.isAlliedMercenaryMount(horse, (EmeraldMercenaryEntity) ownerEntity)) {
 						return false;
 					}
 				}

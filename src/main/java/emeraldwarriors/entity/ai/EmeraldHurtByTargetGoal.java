@@ -35,6 +35,10 @@ public class EmeraldHurtByTargetGoal extends TargetGoal {
             }
         }
 
+        if (emeraldwarriors.mount.MercenaryMounts.isAlliedMercenaryMount(lastHurtBy, this.mercenary)) {
+            return false;
+        }
+
         int hurtTimestamp = this.mercenary.getLastHurtByMobTimestamp();
         if (hurtTimestamp <= this.mercenary.getSelfLastHurtByMobTimestampBaseline()) {
             return false;

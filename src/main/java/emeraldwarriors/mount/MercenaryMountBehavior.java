@@ -86,10 +86,31 @@ public final class MercenaryMountBehavior {
         }
 
         if (shouldLeadHorseOnFoot(merc, horse, owner, ownerOnFoot)) {
-            applyHorseLead(merc, horse);
+            tickHorseFollow(merc, horse);
         } else {
-            releaseHorseLead(merc, horse);
+            releaseHorseFollow(merc, horse);
         }
+    }
+
+    /** Wild mercenaries without an owner: keep the bound horse near without a vanilla leash. */
+    public static void tickWildBoundHorse(EmeraldMercenaryEntity merc, AbstractHorse horse) {
+        if (merc.isPassenger() && merc.getVehicle() instanceof AbstractHorse mount) {
+            applyMountedPace(merc, mount);
+            releaseHorseFollow(merc, horse);
+            return;
+        }
+        if (horse.isVehicle() || !horse.getPassengers().isEmpty()) {
+            return;
+        }
+        if (merc.distanceToSqr(horse) > HORSE_ABANDON_RANGE_SQR) {
+            releaseHorseFollow(merc, horse);
+            return;
+        }
+        if (isInCombat(merc)) {
+            releaseHorseFollow(merc, horse);
+            return;
+        }
+        tickHorseFollow(merc, horse);
     }
 
     private static void tickMounted(
@@ -169,6 +190,13 @@ public final class MercenaryMountBehavior {
             return merc.distanceToSqr(horse) <= HORSE_AVAILABLE_RANGE_SQR;
         }
 
+        if (merc.isTacticalHoldActive() && merc.getTacticalHoldPos() != null) {
+            BlockPos hold = merc.getTacticalHoldPos();
+            if (merc.distanceToSqr(hold.getX() + 0.5, hold.getY(), hold.getZ() + 0.5) > GUARD_TRAVEL_DIST_SQR) {
+                return merc.distanceToSqr(horse) <= HORSE_AVAILABLE_RANGE_SQR;
+            }
+        }
+
         MercenaryOrder order = merc.getCurrentOrder();
         return switch (order) {
             case FOLLOW -> owner != null && merc.distanceToSqr(owner) > FOLLOW_MOUNT_DIST_SQR;
@@ -217,6 +245,10 @@ public final class MercenaryMountBehavior {
             return false;
         }
 
+        if (merc.isTacticalHoldActive() && merc.getTacticalHoldPos() != null) {
+            return merc.distanceToSqr(horse) <= HORSE_AVAILABLE_RANGE_SQR;
+        }
+
         if (order == MercenaryOrder.FOLLOW) {
             return !merc.isSystemForcedNone()
                     && merc.distanceToSqr(owner) <= FOLLOW_MOUNT_DIST_SQR * 4.0D;
@@ -252,21 +284,39 @@ public final class MercenaryMountBehavior {
         merc.startRiding(horse);
     }
 
-    private static void applyHorseLead(EmeraldMercenaryEntity merc, AbstractHorse horse) {
+    /**
+     * Pathfind the bound horse toward the mercenary instead of using a vanilla leash,
+     * which breaks repeatedly when the merc walks to a distant tactical point.
+     */
+    private static void tickHorseFollow(EmeraldMercenaryEntity merc, AbstractHorse horse) {
         if (isHorseLedByMerc(horse, merc)) {
+            horse.removeLeash();
+        }
+        if (merc.distanceToSqr(horse) > HORSE_ABANDON_RANGE_SQR) {
+            horse.getNavigation().stop();
             return;
         }
-        if (merc.getMountLeadCooldown() > 0) {
+        if (merc.distanceToSqr(horse) <= MOUNT_BOARD_RANGE_SQR) {
+            horse.getNavigation().stop();
             return;
         }
-        horse.setLeashedTo(merc, true);
-        merc.setMountLeadCooldown(LEAD_TOGGLE_COOLDOWN);
+        horse.getNavigation().moveTo(merc, 1.15D);
     }
 
     public static void releaseHorseLead(EmeraldMercenaryEntity merc, AbstractHorse horse) {
-        if (horse != null && isHorseLedByMerc(horse, merc)) {
+        releaseHorseFollow(merc, horse);
+    }
+
+    public static void releaseHorseFollow(EmeraldMercenaryEntity merc, AbstractHorse horse) {
+        if (horse == null) {
+            return;
+        }
+        if (isHorseLedByMerc(horse, merc)) {
             horse.removeLeash();
             merc.setMountLeadCooldown(LEAD_TOGGLE_COOLDOWN);
+        }
+        if (!horse.getNavigation().isDone()) {
+            horse.getNavigation().stop();
         }
     }
 

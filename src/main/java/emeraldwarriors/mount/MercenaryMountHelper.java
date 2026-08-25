@@ -84,11 +84,8 @@ public final class MercenaryMountHelper {
         if (startMounted) {
             MercenaryMounts.prepareForMount(mount);
             if (!merc.startRiding(mount)) {
-                mount.setLeashedTo(merc, true);
                 startMounted = false;
             }
-        } else {
-            mount.setLeashedTo(merc, true);
         }
     }
 

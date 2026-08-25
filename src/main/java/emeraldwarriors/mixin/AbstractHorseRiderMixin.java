@@ -23,9 +23,12 @@ public class AbstractHorseRiderMixin {
 
     @Inject(method = "getControllingPassenger", at = @At("HEAD"), cancellable = true)
     private void mercenaryRiderTakesControl(CallbackInfoReturnable<LivingEntity> cir) {
-        Entity rider = ((Entity) (Object) this).getFirstPassenger();
-        if (rider instanceof EmeraldMercenaryEntity mercenary) {
-            cir.setReturnValue(mercenary);
+        AbstractHorse self = (AbstractHorse) (Object) this;
+        for (Entity passenger : self.getPassengers()) {
+            if (passenger instanceof EmeraldMercenaryEntity mercenary) {
+                cir.setReturnValue(mercenary);
+                return;
+            }
         }
     }
 }

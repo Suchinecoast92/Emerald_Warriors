@@ -1365,6 +1365,19 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             output.putInt("BoundBedZ", this.boundBedPos.getZ());
         }
 
+        if (this.tacticalHoldActive && this.tacticalHoldPos != null) {
+            output.putInt("TacticalHoldActive", 1);
+            output.putInt("TacticalHoldX", this.tacticalHoldPos.getX());
+            output.putInt("TacticalHoldY", this.tacticalHoldPos.getY());
+            output.putInt("TacticalHoldZ", this.tacticalHoldPos.getZ());
+            output.putDouble("TacticalHoldOffsetX", this.tacticalHoldOffsetX);
+            output.putDouble("TacticalHoldOffsetZ", this.tacticalHoldOffsetZ);
+        }
+        if (this.tacticalAttackActive && this.tacticalAttackTargetUuid != null) {
+            output.putInt("TacticalAttackActive", 1);
+            output.putString("TacticalAttackTarget", this.tacticalAttackTargetUuid.toString());
+        }
+
         for (int i = MercenaryInventory.SLOT_BAG_START; i < MercenaryInventory.SIZE; i++) {
             ItemStack stack = this.mercenaryInventory.getItem(i);
             if (!stack.isEmpty()) {
@@ -1538,6 +1551,36 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         int bz = input.getIntOr("BoundBedZ", Integer.MIN_VALUE);
         if (bx != Integer.MIN_VALUE && by != Integer.MIN_VALUE && bz != Integer.MIN_VALUE) {
             this.boundBedPos = new BlockPos(bx, by, bz);
+        }
+
+        this.tacticalHoldActive = false;
+        this.tacticalHoldPos = null;
+        this.tacticalHoldOffsetX = 0.0D;
+        this.tacticalHoldOffsetZ = 0.0D;
+        if (input.getIntOr("TacticalHoldActive", 0) == 1) {
+            int tx = input.getIntOr("TacticalHoldX", Integer.MIN_VALUE);
+            int ty = input.getIntOr("TacticalHoldY", Integer.MIN_VALUE);
+            int tz = input.getIntOr("TacticalHoldZ", Integer.MIN_VALUE);
+            if (tx != Integer.MIN_VALUE && ty != Integer.MIN_VALUE && tz != Integer.MIN_VALUE) {
+                this.tacticalHoldPos = new BlockPos(tx, ty, tz);
+                this.tacticalHoldOffsetX = input.getDoubleOr("TacticalHoldOffsetX", 0.0D);
+                this.tacticalHoldOffsetZ = input.getDoubleOr("TacticalHoldOffsetZ", 0.0D);
+                this.tacticalHoldActive = true;
+            }
+        }
+
+        this.tacticalAttackActive = false;
+        this.tacticalAttackTargetId = -1;
+        this.tacticalAttackTargetUuid = null;
+        if (input.getIntOr("TacticalAttackActive", 0) == 1) {
+            input.getString("TacticalAttackTarget").ifPresent(value -> {
+                try {
+                    this.tacticalAttackTargetUuid = UUID.fromString(value);
+                    this.tacticalAttackActive = true;
+                } catch (IllegalArgumentException ignored) {
+                    this.tacticalAttackTargetUuid = null;
+                }
+            });
         }
 
         // Aplicar stats del rango después de cargar
@@ -1887,16 +1930,18 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
         MercenaryOrder order = this.getCurrentOrder();
         if (order == MercenaryOrder.GUARD || order == MercenaryOrder.PATROL) {
-            this.targetSelector.addGoal(0, this.nearestAttackableGoal);
-            this.targetSelector.addGoal(1, this.hurtByTargetGoal);
-            this.targetSelector.addGoal(2, this.defendVillagerGoal);
+            // Villager defense above general aggro so raids peel off to save villagers.
+            this.targetSelector.addGoal(0, this.hurtByTargetGoal);
+            this.targetSelector.addGoal(1, this.defendVillagerGoal);
+            this.targetSelector.addGoal(2, this.nearestAttackableGoal);
             this.targetSelector.addGoal(3, this.protectOwnerGoal);
             this.targetSelector.addGoal(4, this.ownerHurtTargetGoal);
         } else {
             this.targetSelector.addGoal(0, this.protectOwnerGoal);
             this.targetSelector.addGoal(1, this.ownerHurtTargetGoal);
             this.targetSelector.addGoal(2, this.hurtByTargetGoal);
-            this.targetSelector.addGoal(2, this.defendVillagerGoal);
+            // FOLLOW: canUse only during raids; must outrank nothing critical but stay registered.
+            this.targetSelector.addGoal(3, this.defendVillagerGoal);
         }
     }
 
@@ -2079,6 +2124,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             AbstractHorse horse = this.findBoundHorse();
             if (this.boundHorseUuid != null && horse == null) {
                 this.clearHorseBinding();
+            } else if (horse != null) {
+                MercenaryMountBehavior.tickWildBoundHorse(this, horse);
             }
         }
     }
@@ -2817,6 +2864,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                 return;
             }
         }
+        if (emeraldwarriors.mount.MercenaryMounts.isAlliedMercenaryMount(target, this)) {
+            return;
+        }
         super.setTarget(target);
         this.setAggressive(true);
     }
@@ -2835,6 +2885,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         if (target instanceof Player p && (p.isCreative() || p.isSpectator())) {
             return;
         }
+        if (emeraldwarriors.mount.MercenaryMounts.isAlliedMercenaryMount(target, this)) {
+            return;
+        }
         super.setTarget(target);
         this.setAggressive(true);
     }
@@ -2843,6 +2896,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     public void setTarget(LivingEntity target) {
         if (target != null) {
             if (target instanceof AbstractVillager || target instanceof IronGolem) {
+                return;
+            }
+
+            if (emeraldwarriors.mount.MercenaryMounts.isAlliedMercenaryMount(target, this)) {
                 return;
             }
 
@@ -3009,7 +3066,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     @Override
     public Vec3 getVehicleAttachmentPoint(net.minecraft.world.entity.Entity vehicle) {
         Vec3 base = super.getVehicleAttachmentPoint(vehicle);
-        if (vehicle instanceof AbstractHorse) {
+        if (vehicle instanceof AbstractHorse horse && !MercenaryMounts.isCamel(horse)) {
             return base.add(0.0D, MercenaryMounts.getRideAttachmentYOffset(vehicle), 0.0D);
         }
         // Ajustar el punto de anclaje al vehículo para que el cuerpo quede más bajo
@@ -3058,7 +3115,6 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         super.rideTick();
         if (this.getVehicle() instanceof AbstractHorse horse) {
             MercenaryMountBehavior.applyMountedPace(this, horse);
-            this.syncMountedRotation(horse);
         }
     }
 
@@ -3369,6 +3425,17 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             }
         }
 
+        for (net.minecraft.world.entity.animal.equine.AbstractHorse horse : this.level().getEntitiesOfClass(
+                net.minecraft.world.entity.animal.equine.AbstractHorse.class,
+                search,
+                h -> h.isAlive() && emeraldwarriors.mount.MercenaryMounts.isAlliedMercenaryMount(h, this)
+        )) {
+            Optional<Vec3> hit = horse.getBoundingBox().inflate(0.35D).clip(start, end);
+            if (hit.isPresent() && start.distanceToSqr(hit.get()) < maxDistSqr) {
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -3410,6 +3477,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     @Override
     public void tick() {
+        if (this.getVehicle() instanceof AbstractHorse horse) {
+            this.syncMountedRotation(horse);
+        }
         super.tick();
         if (!this.level().isClientSide()) {
             boolean shouldAdmireFlag = (this.contractAdmireTicks > 0 || this.pendingContractAction != PendingContractAction.NONE)
@@ -4259,6 +4329,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     }
     
     private boolean isValidMultiTarget(LivingEntity entity) {
+        if (emeraldwarriors.mount.MercenaryMounts.isAlliedMercenaryMount(entity, this)) {
+            return false;
+        }
+
         // Use existing target validation logic
         if (entity instanceof Player player) {
             // Don't attack owner

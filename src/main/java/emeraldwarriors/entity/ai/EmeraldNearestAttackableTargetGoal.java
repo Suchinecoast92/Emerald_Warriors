@@ -91,6 +91,10 @@ public class EmeraldNearestAttackableTargetGoal extends TargetGoal {
             return false;
         }
 
+        if (emeraldwarriors.mount.MercenaryMounts.isAlliedMercenaryMount(entity, this.mercenary)) {
+            return false;
+        }
+
         // Endermen are neutral unless the owner directs an attack or the merc is retaliating.
         if (CombatTargets.isEnderman(entity)) {
             return false;

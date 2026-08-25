@@ -80,7 +80,13 @@ public class EmeraldMeleeAttackGoal extends Goal {
         }
 
         double attackReachSqr = this.getAttackReachSqr(target);
-        return this.isWithinAttackRange(target, attackReachSqr);
+        if (this.isWithinAttackRange(target, attackReachSqr)) {
+            return true;
+        }
+
+        return this.mob.isPassenger()
+                && this.mob.getVehicle() instanceof net.minecraft.world.entity.animal.equine.AbstractHorse
+                && this.mob.distanceToSqr(target) <= 32.0D * 32.0D;
     }
 
     @Override
@@ -102,6 +108,19 @@ public class EmeraldMeleeAttackGoal extends Goal {
                     || this.mob.isBrotherhoodAssistTarget(target);
             if (!validNeutralTarget) {
                 return false;
+            }
+        }
+
+        if (this.mob.getEffectiveNavigation().isDone()) {
+            this.path = this.mob.getEffectiveNavigation().createPath(target, 0);
+            if (this.path == null
+                    && !(this.mob.isPassenger()
+                    && this.mob.getVehicle() instanceof net.minecraft.world.entity.animal.equine.AbstractHorse
+                    && this.mob.distanceToSqr(target) <= 32.0D * 32.0D)) {
+                double attackReachSqr = this.getAttackReachSqr(target);
+                if (!this.isWithinAttackRange(target, attackReachSqr)) {
+                    return false;
+                }
             }
         }
         if (!this.followingTargetEvenIfNotSeen) {

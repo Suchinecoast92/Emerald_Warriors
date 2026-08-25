@@ -1,9 +1,14 @@
 package emeraldwarriors.mount;
 
+import emeraldwarriors.entity.EmeraldMercenaryEntity;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.animal.camel.Camel;
 import net.minecraft.world.entity.animal.equine.AbstractHorse;
+
+import java.util.UUID;
 
 /**
  * Utilidades compartidas para monturas soportadas: caballo, burro, mula y camello
@@ -12,9 +17,9 @@ import net.minecraft.world.entity.animal.equine.AbstractHorse;
 public final class MercenaryMounts {
 
     private static final double EQUINE_RIDE_ATTACH_Y = 0.74D;
-    private static final double CAMEL_RIDE_ATTACH_Y = 0.82D;
     private static final double EQUINE_RENDER_OFFSET_Y = 0.05D;
-    private static final double CAMEL_RENDER_OFFSET_Y = 0.12D;
+    /** Solo render: bajar levemente el modelo sobre la joroba (sin tocar posición lógica). */
+    private static final double CAMEL_RENDER_OFFSET_Y = -0.08D;
     /** Ritmo de referencia de equinos domados (caballo medio en vanilla). */
     private static final double EQUINE_REFERENCE_MOVEMENT_SPEED = 0.225D;
     /**
@@ -35,10 +40,7 @@ public final class MercenaryMounts {
     }
 
     public static double getRideAttachmentYOffset(Entity vehicle) {
-        if (vehicle instanceof Camel) {
-            return CAMEL_RIDE_ATTACH_Y;
-        }
-        if (vehicle instanceof AbstractHorse) {
+        if (vehicle instanceof AbstractHorse && !(vehicle instanceof Camel)) {
             return EQUINE_RIDE_ATTACH_Y;
         }
         return 0.0D;
@@ -68,5 +70,50 @@ public final class MercenaryMounts {
         if (mount instanceof Camel camel && camel.isCamelSitting()) {
             camel.standUpInstantly();
         }
+    }
+
+    /** True when the entity is a horse/camel/donkey bound to any mercenary. */
+    public static boolean isMercenaryBoundMount(LivingEntity entity) {
+        if (!(entity instanceof AbstractHorse horse) || !horse.isAlive()) {
+            return false;
+        }
+        if (!(horse.level() instanceof ServerLevel level)) {
+            return false;
+        }
+        return !level.getEntitiesOfClass(
+                EmeraldMercenaryEntity.class,
+                horse.getBoundingBox().inflate(64.0D),
+                merc -> merc.isAlive() && horse.getUUID().equals(merc.getBoundHorseUuid())
+        ).isEmpty();
+    }
+
+    /**
+     * True when the mount belongs to this mercenary or to another mercenary hired by the same owner.
+     * Wild mercenaries treat every bound mount as protected.
+     */
+    public static boolean isAlliedMercenaryMount(LivingEntity entity, EmeraldMercenaryEntity mercenary) {
+        if (!(entity instanceof AbstractHorse horse) || !horse.isAlive()) {
+            return false;
+        }
+        if (horse.getUUID().equals(mercenary.getBoundHorseUuid())) {
+            return true;
+        }
+        UUID ownerId = mercenary.getOwnerUuid();
+        if (ownerId == null) {
+            return isMercenaryBoundMount(entity);
+        }
+        if (!(horse.level() instanceof ServerLevel level)) {
+            return false;
+        }
+        for (EmeraldMercenaryEntity other : level.getEntitiesOfClass(
+                EmeraldMercenaryEntity.class,
+                horse.getBoundingBox().inflate(64.0D),
+                m -> m.isAlive() && horse.getUUID().equals(m.getBoundHorseUuid())
+        )) {
+            if (ownerId.equals(other.getOwnerUuid())) {
+                return true;
+            }
+        }
+        return false;
     }
 }

@@ -4,6 +4,7 @@
 	"compatibilityLevel": "JAVA_21",
 	"mixins": [
 		"AbstractHorseRiderMixin",
+		"EntityPassengerMixin",
 		"ExampleMixin",
 		"InstrumentItemMixin",
 		"SpawnPlacementsInvoker"

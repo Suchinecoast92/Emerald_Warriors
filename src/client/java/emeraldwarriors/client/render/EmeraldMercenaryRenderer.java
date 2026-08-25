@@ -102,15 +102,21 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
 
         state.ridingHorse = entity.isPassenger() && entity.getVehicle() instanceof AbstractHorse;
         if (state.ridingHorse && entity.getVehicle() instanceof AbstractHorse horse) {
-            state.mountRenderOffsetY = MercenaryMounts.getRenderYOffsetY(horse);
-            state.pose = Pose.SITTING;
-            float bodyYaw = Mth.rotLerp(partialTick, horse.yRotO, horse.getYRot());
-            float headYaw = Mth.rotLerp(partialTick, entity.yHeadRotO, entity.yHeadRot);
-            state.bodyRot = bodyYaw;
-            // yRot = relativeHeadYaw (no yaw absoluto de cabeza).
-            state.yRot = EmeraldMercenaryEntity.mountedRelativeHeadYaw(bodyYaw, headYaw);
-            float pitch = Mth.lerp(partialTick, entity.xRotO, entity.getXRot());
-            state.xRot = Mth.clamp(pitch, -EmeraldMercenaryEntity.MOUNTED_HEAD_PITCH_LIMIT, EmeraldMercenaryEntity.MOUNTED_HEAD_PITCH_LIMIT);
+            if (MercenaryMounts.isCamel(horse)) {
+                // Camello: dejar pose/rotación de super (STANDING + isPassenger) para alinear con el asiento vanilla.
+                state.mountRenderOffsetY = MercenaryMounts.getRenderYOffsetY(horse);
+                float pitch = Mth.lerp(partialTick, entity.xRotO, entity.getXRot());
+                state.xRot = Mth.clamp(pitch, -EmeraldMercenaryEntity.MOUNTED_HEAD_PITCH_LIMIT, EmeraldMercenaryEntity.MOUNTED_HEAD_PITCH_LIMIT);
+            } else {
+                state.mountRenderOffsetY = MercenaryMounts.getRenderYOffsetY(horse);
+                state.pose = Pose.SITTING;
+                float bodyYaw = Mth.rotLerp(partialTick, horse.yRotO, horse.getYRot());
+                float headYaw = Mth.rotLerp(partialTick, entity.yHeadRotO, entity.yHeadRot);
+                state.bodyRot = bodyYaw;
+                state.yRot = EmeraldMercenaryEntity.mountedRelativeHeadYaw(bodyYaw, headYaw);
+                float pitch = Mth.lerp(partialTick, entity.xRotO, entity.getXRot());
+                state.xRot = Mth.clamp(pitch, -EmeraldMercenaryEntity.MOUNTED_HEAD_PITCH_LIMIT, EmeraldMercenaryEntity.MOUNTED_HEAD_PITCH_LIMIT);
+            }
         } else if (entity.isInWater() && !entity.isPassenger()) {
             Vec3 motion = entity.getDeltaMovement();
             boolean isMoving = motion.lengthSqr() > 0.001D;
