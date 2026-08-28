@@ -15,8 +15,8 @@ import java.util.EnumSet;
  * Simple follow-owner goal for Emerald mercenaries.
  * The mercenary follows its owner when too far away, similar to a tame wolf.
  *
- * <p>When mounted, {@link EmeraldMercenaryEntity#getEffectiveNavigation()} is the mount's
- * direct steering nav, not the mercenary's own GroundPathNavigation.
+ * <p>When mounted, {@link EmeraldMercenaryEntity#getEffectiveNavigation()} uses the mercenary's
+ * own ground pathfinder (vanilla {@code Mob.getNavigation()} delegates to the mount).
  */
 public class EmeraldFollowOwnerGoal extends Goal {
     private final EmeraldMercenaryEntity mercenary;

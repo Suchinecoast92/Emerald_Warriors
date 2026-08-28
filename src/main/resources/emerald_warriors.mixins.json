@@ -6,6 +6,7 @@
 		"AbstractHorseRiderMixin",
 		"EntityPassengerMixin",
 		"MobAiAccessor",
+		"PathNavigationAccessor",
 		"ExampleMixin",
 		"InstrumentItemMixin",
 		"SpawnPlacementsInvoker"

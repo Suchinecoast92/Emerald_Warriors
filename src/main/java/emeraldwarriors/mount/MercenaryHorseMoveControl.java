@@ -20,6 +20,7 @@ import net.minecraft.world.phys.shapes.VoxelShape;
 public class MercenaryHorseMoveControl extends MoveControl {
 
     private static final float TURN_DEG_PER_TICK = 12.0F;
+    private static final float TURN_DEG_NEAR_TARGET = 24.0F;
     private static final double ARRIVE_HORIZ_SQR = 0.04D;
 
     public MercenaryHorseMoveControl(Mob mob) {
@@ -60,7 +61,8 @@ public class MercenaryHorseMoveControl extends MoveControl {
 
         if (horizSqr >= ARRIVE_HORIZ_SQR) {
             float yaw = (float) (Mth.atan2(dz, dx) * (180.0D / Math.PI)) - 90.0F;
-            this.mob.setYRot(this.rotlerp(this.mob.getYRot(), yaw, TURN_DEG_PER_TICK));
+            float turnRate = horizSqr < 9.0D ? TURN_DEG_NEAR_TARGET : TURN_DEG_PER_TICK;
+            this.mob.setYRot(this.rotlerp(this.mob.getYRot(), yaw, turnRate));
         }
         this.mob.yBodyRot = this.mob.getYRot();
         this.mob.setYHeadRot(this.mob.getYRot());

@@ -53,7 +53,7 @@ public class UseHealingItemGoal extends Goal {
         }
         if (!this.mercenary.isAlive()) return false;
         if (this.mercenary.isUsingItem()) return false;
-        if (this.mercenary.getHealth() >= this.mercenary.getMaxHealth()) return false;
+        if (MercenaryFoodUtil.isAtFullHealth(this.mercenary)) return false;
 
         // Only out-of-combat healing; low-HP combat healing is handled by RetreatLowHpGoal
         if (this.mercenary.isOutOfCombatForHeal()) {
@@ -99,16 +99,17 @@ public class UseHealingItemGoal extends Goal {
         if (this.consuming) {
             ItemStack currentMain = this.mercenary.getMercenaryInventory().getItem(MercenaryInventory.SLOT_MAIN_HAND);
             if (!currentMain.isEmpty()) {
-                if (isOutOfCombatHealingItem(currentMain)
-                        || currentMain.is(Items.GLASS_BOTTLE)
-                        || currentMain.is(Items.BOWL)) {
+                if (currentMain.is(Items.GLASS_BOTTLE) || currentMain.is(Items.BOWL)) {
+                    toReturn = currentMain.copy();
+                    didConsume = true;
+                } else if (!this.consumedItem.isEmpty()
+                        && ItemStack.isSameItemSameComponents(currentMain, this.consumedItem)) {
+                    // Already removed from the bag when eating started; discard the hand stack.
+                    didConsume = true;
+                } else if (isOutOfCombatHealingItem(currentMain)) {
                     toReturn = currentMain.copy();
                 }
             } else {
-                didConsume = true;
-            }
-
-            if (currentMain.is(Items.GLASS_BOTTLE) || currentMain.is(Items.BOWL)) {
                 didConsume = true;
             }
         }
@@ -125,6 +126,8 @@ public class UseHealingItemGoal extends Goal {
 
         if (didConsume && !this.consumedItem.isEmpty() && MercenaryFoodUtil.isSafeFood(this.consumedItem) && !isHealingItem(this.consumedItem)) {
             MercenaryFoodUtil.applyFoodHealing(this.mercenary, this.consumedItem);
+        } else if (didConsume) {
+            MercenaryFoodUtil.snapHealthToMax(this.mercenary);
         }
 
         this.savedWeapon = ItemStack.EMPTY;
@@ -150,7 +153,7 @@ public class UseHealingItemGoal extends Goal {
 
     private int findHealingSlot(boolean excludeEnchantedApple) {
         MercenaryInventory inv = this.mercenary.getMercenaryInventory();
-        float missingHealth = this.mercenary.getMaxHealth() - this.mercenary.getHealth();
+        float missingHealth = MercenaryFoodUtil.getMissingHealth(this.mercenary);
         int bestSlot = -1;
         int bestScore = Integer.MIN_VALUE;
         for (int i = MercenaryInventory.SLOT_BAG_START; i < MercenaryInventory.SIZE; i++) {
@@ -169,7 +172,7 @@ public class UseHealingItemGoal extends Goal {
     }
 
     private static int getOutOfCombatHealingScore(ItemStack stack, float missingHealth, boolean excludeEnchantedApple) {
-        if (stack.isEmpty() || !isOutOfCombatHealingItem(stack)) {
+        if (stack.isEmpty() || missingHealth <= 0.0F || !isOutOfCombatHealingItem(stack)) {
             return Integer.MIN_VALUE;
         }
         if (excludeEnchantedApple && stack.getItem() == Items.ENCHANTED_GOLDEN_APPLE) {

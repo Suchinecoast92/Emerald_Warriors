@@ -16,8 +16,9 @@ import java.util.EnumSet;
 /**
  * Cuando la vida del mercenario baja del umbral de su rango:
  *  1. Detiene el combate y busca items de curación en su inventario.
- *  2. Los consume (con animación) hasta alcanzar el 75% de HP.
- *  3. Solo si no hay items de curación disponibles, huye hacia su punto de anclaje.
+ *  2. Los consume (con animación) hasta alcanzar ~55-60% de HP según rango.
+ *  3. Prioridad: encantada > dorada > pociones > comida (atributos vanilla).
+ *  4. Solo si no hay items de curación disponibles, huye hacia su punto de anclaje.
  */
 public class RetreatLowHpGoal extends Goal {
 
@@ -91,6 +92,9 @@ public class RetreatLowHpGoal extends Goal {
                     if (currentMain.is(Items.GLASS_BOTTLE) || currentMain.is(Items.BOWL)) {
                         toReturn = currentMain.copy();
                         didConsume = true;
+                    } else if (!this.consumedItem.isEmpty()
+                            && ItemStack.isSameItemSameComponents(currentMain, this.consumedItem)) {
+                        didConsume = true;
                     } else if (UseHealingItemGoal.isHealingItem(currentMain) || MercenaryFoodUtil.isSafeFood(currentMain)) {
                         toReturn = currentMain.copy();
                     }
@@ -106,6 +110,8 @@ public class RetreatLowHpGoal extends Goal {
 
                 if (didConsume && !this.consumedItem.isEmpty() && MercenaryFoodUtil.isSafeFood(this.consumedItem) && !UseHealingItemGoal.isHealingItem(this.consumedItem)) {
                     MercenaryFoodUtil.applyFoodHealing(this.mercenary, this.consumedItem);
+                } else if (didConsume) {
+                    MercenaryFoodUtil.snapHealthToMax(this.mercenary);
                 }
 
                 this.isHealing = false;
@@ -157,6 +163,7 @@ public class RetreatLowHpGoal extends Goal {
 
     private void tryStartHealing() {
         if (this.mercenary.isUsingItem()) return;
+        if (MercenaryFoodUtil.isAtFullHealth(this.mercenary)) return;
         if (this.healCooldown > 0) {
             if (this.mercenary.getNavigation().isDone()) {
                 moveToSafePoint();
@@ -203,13 +210,15 @@ public class RetreatLowHpGoal extends Goal {
 
     private int findHealingSlot() {
         MercenaryInventory inv = this.mercenary.getMercenaryInventory();
-        boolean allowFood = this.mercenary.getCurrentOrder() == MercenaryOrder.NEUTRAL;
-        float missingHealth = this.mercenary.getMaxHealth() - this.mercenary.getHealth();
+        float missingHealth = MercenaryFoodUtil.getMissingHealth(this.mercenary);
+        if (missingHealth <= 0.0F) {
+            return -1;
+        }
         int bestSlot = -1;
         int bestScore = Integer.MIN_VALUE;
         for (int i = MercenaryInventory.SLOT_BAG_START; i < MercenaryInventory.SIZE; i++) {
             ItemStack stack = inv.getItem(i);
-            int score = getEmergencyHealingScore(stack, allowFood, missingHealth);
+            int score = getEmergencyHealingScore(stack, missingHealth);
             if (score > bestScore) {
                 bestSlot = i;
                 bestScore = score;
@@ -218,24 +227,31 @@ public class RetreatLowHpGoal extends Goal {
         return bestSlot;
     }
 
-    private static int getEmergencyHealingScore(ItemStack stack, boolean allowFood, float missingHealth) {
-        if (stack.isEmpty()) {
+    private static int getEmergencyHealingScore(ItemStack stack, float missingHealth) {
+        if (stack.isEmpty() || missingHealth <= 0.0F) {
             return Integer.MIN_VALUE;
         }
-        if (UseHealingItemGoal.isHealingItem(stack)) {
-            if (stack.is(Items.ENCHANTED_GOLDEN_APPLE)) {
-                return 4000;
-            }
+        if (stack.is(Items.ENCHANTED_GOLDEN_APPLE)) {
+            return 4000;
+        }
+        if (stack.is(Items.GOLDEN_APPLE)) {
             return 3000;
         }
-        if (!allowFood || !MercenaryFoodUtil.isSafeFood(stack)) {
+        if (UseHealingItemGoal.isHealingItem(stack)) {
+            return 2000;
+        }
+        if (!MercenaryFoodUtil.isSafeFood(stack)) {
             return Integer.MIN_VALUE;
         }
         float foodHealing = MercenaryFoodUtil.getFoodHealingAmount(stack);
         if (foodHealing <= 0.0F) {
             return Integer.MIN_VALUE;
         }
-        return 1000 + Math.round(Math.min(foodHealing, missingHealth) * 50.0F);
+        int score = 1000 - Math.round(Math.abs(foodHealing - missingHealth) * 25.0F);
+        if (foodHealing <= missingHealth + 1.0F) {
+            score += 100;
+        }
+        return score;
     }
 
     private void returnToBag(ItemStack stack) {

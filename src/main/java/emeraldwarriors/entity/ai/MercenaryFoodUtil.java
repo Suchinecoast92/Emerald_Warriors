@@ -52,12 +52,34 @@ public final class MercenaryFoodUtil {
         return Math.max(1.0F, Math.min(10.0F, amount));
     }
 
+    /**
+     * Matches the mercenary GUI hearts ({@code Math.ceil} on health and max health).
+     * A mob can show full hearts while {@code getHealth() < getMaxHealth()} by a fraction.
+     */
+    public static boolean isAtFullHealth(LivingEntity entity) {
+        return Math.ceil(entity.getHealth()) >= Math.ceil(entity.getMaxHealth());
+    }
+
+    public static float getMissingHealth(LivingEntity entity) {
+        return Math.max(0.0F, entity.getMaxHealth() - entity.getHealth());
+    }
+
+    public static void snapHealthToMax(LivingEntity entity) {
+        if (isAtFullHealth(entity)) {
+            entity.setHealth(entity.getMaxHealth());
+        }
+    }
+
     public static boolean applyFoodHealing(LivingEntity entity, ItemStack stack) {
+        if (isAtFullHealth(entity)) {
+            return false;
+        }
         float amount = getFoodHealingAmount(stack);
-        if (amount <= 0.0F || entity.getHealth() >= entity.getMaxHealth()) {
+        if (amount <= 0.0F) {
             return false;
         }
         entity.heal(Math.min(amount, entity.getMaxHealth() - entity.getHealth()));
+        snapHealthToMax(entity);
         return true;
     }
 }

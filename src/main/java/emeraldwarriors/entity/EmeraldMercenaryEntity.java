@@ -31,6 +31,9 @@ import emeraldwarriors.entity.ai.MercenaryLanceChargeGoal;
 import emeraldwarriors.entity.spawn.MercenaryWildSpawnHelper;
 import emeraldwarriors.inventory.MercenaryInventory;
 import emeraldwarriors.inventory.MercenaryMenu;
+import emeraldwarriors.mixin.MobAiAccessor;
+import emeraldwarriors.mount.MercenaryRiderPathNavigation;
+import emeraldwarriors.mount.MercenaryMountedPathSync;
 import emeraldwarriors.mount.MercenaryMountHelper;
 import emeraldwarriors.mount.MercenaryMountBehavior;
 import emeraldwarriors.mount.MercenaryMountSteering;
@@ -2138,12 +2141,22 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         return isSpearItem(this.getMainHandItem().getItem());
     }
 
+    /**
+     * The mercenary's own ground pathfinder (stored on {@code Mob.navigation}).
+     * When mounted as controlling rider, {@link Mob#getNavigation()} delegates to the horse —
+     * use this for safe pathfinding instead.
+     */
+    public PathNavigation getMercenaryGroundNavigation() {
+        return ((MobAiAccessor) (Object) this).emeraldWarriors$getRawNavigation();
+    }
+
     public PathNavigation getEffectiveNavigation() {
-        if (this.isPassenger() && this.getVehicle() instanceof Mob vehicle) {
-            return vehicle.getNavigation();
+        if (this.isPassenger() && this.getVehicle() instanceof AbstractHorse) {
+            return this.getMercenaryGroundNavigation();
         }
         return this.getNavigation();
     }
+
 
     public double resolveNavigationSpeed(double goalSpeed) {
         return MercenaryMountBehavior.resolveNavigationSpeed(this, goalSpeed);
@@ -3193,6 +3206,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     public void rideTick() {
         if (!this.level().isClientSide() && this.getVehicle() instanceof AbstractHorse horse) {
             MercenaryMountSteering.tickRider(this, horse);
+            MercenaryMountedPathSync.tick(this, horse);
         }
         super.rideTick();
         if (this.getVehicle() instanceof AbstractHorse horse) {
@@ -3243,7 +3257,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     @Override
     protected PathNavigation createNavigation(Level level) {
-        PathNavigation nav = super.createNavigation(level);
+        MercenaryRiderPathNavigation nav = new MercenaryRiderPathNavigation(this, level);
         nav.setCanOpenDoors(true);
         return nav;
     }

@@ -78,6 +78,21 @@ public class DirectMountNavigation extends GroundPathNavigation {
         this.mob.setZza(0.0F);
     }
 
+    /**
+     * Steer toward a path node. Skips redundant {@code moveTo} when the target did not change,
+     * reducing turn-in-place churn from re-issuing the same node every tick.
+     */
+    public void steerToward(double x, double y, double z, double speed) {
+        if (this.hasTarget
+                && Math.abs(this.targetX - x) < 0.05D
+                && Math.abs(this.targetY - y) < 0.05D
+                && Math.abs(this.targetZ - z) < 0.05D
+                && Math.abs(this.speedModifier - speed) < 0.05D) {
+            return;
+        }
+        this.setDirectTarget(x, y, z, speed);
+    }
+
     private void setDirectTarget(double x, double y, double z, double speed) {
         this.hasTarget = true;
         this.targetX = x;
@@ -87,3 +102,4 @@ public class DirectMountNavigation extends GroundPathNavigation {
         this.mob.getMoveControl().setWantedPosition(x, y, z, speed);
     }
 }
+

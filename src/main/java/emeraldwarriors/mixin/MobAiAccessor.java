@@ -13,5 +13,8 @@ public interface MobAiAccessor {
     void emeraldWarriors$setMoveControl(MoveControl moveControl);
 
     @Accessor("navigation")
+    PathNavigation emeraldWarriors$getRawNavigation();
+
+    @Accessor("navigation")
     void emeraldWarriors$setNavigation(PathNavigation navigation);
 }

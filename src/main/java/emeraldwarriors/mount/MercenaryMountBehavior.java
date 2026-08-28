@@ -154,8 +154,7 @@ public final class MercenaryMountBehavior {
                 merc.stopRiding();
                 return;
             }
-            Vec3 slot = MercenaryMountSteering.getFollowSlot(merc, owner);
-            horse.getNavigation().moveTo(slot.x, slot.y, slot.z, resolveNavigationSpeed(merc, 1.0D));
+            // Movement handled by EmeraldFollowOwnerGoal via getEffectiveNavigation() + MercenaryMountedPathSync.
             return;
         }
 
@@ -215,7 +214,7 @@ public final class MercenaryMountBehavior {
                 yield guard != null
                         && merc.distanceToSqr(guard.getX() + 0.5, guard.getY(), guard.getZ() + 0.5) > GUARD_TRAVEL_DIST_SQR;
             }
-            case PATROL -> !merc.getNavigation().isDone()
+            case PATROL -> !merc.getEffectiveNavigation().isDone()
                     || hasPatrolTravelAhead(merc);
             case NEUTRAL -> false;
         };
@@ -273,7 +272,7 @@ public final class MercenaryMountBehavior {
             return distGuard <= GUARD_ARRIVE_DIST_SQR * 4.0D;
         }
 
-        return !merc.getNavigation().isDone();
+        return !merc.getEffectiveNavigation().isDone();
     }
 
     private static void approachAndMount(EmeraldMercenaryEntity merc, AbstractHorse horse) {
@@ -313,6 +312,7 @@ public final class MercenaryMountBehavior {
         horse.getNavigation().moveTo(merc, 1.15D);
     }
 
+
     public static void releaseHorseLead(EmeraldMercenaryEntity merc, AbstractHorse horse) {
         releaseHorseFollow(merc, horse);
     }
@@ -346,6 +346,7 @@ public final class MercenaryMountBehavior {
         MountedGait gait = resolveMountedGait(merc);
         boolean moving = horse.getMoveControl().hasWanted()
                 || !horse.getNavigation().isDone()
+                || !merc.getEffectiveNavigation().isDone()
                 || horse.getDeltaMovement().horizontalDistanceSqr() > 0.0025D;
         // Walk usa la animación de paso. Trote/galope/keep-up activan el sprint vanilla de la montura.
         horse.setSprinting(moving && gait != MountedGait.WALK);
