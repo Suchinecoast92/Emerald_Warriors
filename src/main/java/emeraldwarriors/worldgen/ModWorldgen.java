@@ -98,7 +98,14 @@ public class ModWorldgen {
                         if (!level.getBlockState(below).isFaceSturdy(level, below, Direction.UP)) {
                             return false;
                         }
-                        return level.getMaxLocalRawBrightness(pos) > 7;
+                        if (level.getMaxLocalRawBrightness(pos) <= 7) {
+                            return false;
+                        }
+                        if (reason == EntitySpawnReason.NATURAL) {
+                            float chance = Math.max(0.0F, Math.min(1.0F, cfg.solitarySpawn.naturalSpawnChance));
+                            return random.nextFloat() < chance;
+                        }
+                        return true;
                     }
             );
         }

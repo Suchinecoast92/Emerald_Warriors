@@ -9,7 +9,6 @@ import net.minecraft.resources.ResourceKey;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
-import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
@@ -32,7 +31,7 @@ public class UseHealingItemGoal extends Goal {
     private static final ResourceKey<MobEffect> REGENERATION_KEY =
             ResourceKey.create(Registries.MOB_EFFECT, Identifier.withDefaultNamespace("regeneration"));
 
-    private static final int OUT_OF_COMBAT_COOLDOWN = 400; // 20 s between out-of-combat uses
+    private static final int OUT_OF_COMBAT_COOLDOWN = 160; // 8 s between out-of-combat uses
 
     private final EmeraldMercenaryEntity mercenary;
     private ItemStack savedWeapon = ItemStack.EMPTY;
@@ -125,7 +124,7 @@ public class UseHealingItemGoal extends Goal {
         }
 
         if (didConsume && !this.consumedItem.isEmpty() && MercenaryFoodUtil.isSafeFood(this.consumedItem) && !isHealingItem(this.consumedItem)) {
-            this.mercenary.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 200, 0, false, false));
+            MercenaryFoodUtil.applyFoodHealing(this.mercenary, this.consumedItem);
         }
 
         this.savedWeapon = ItemStack.EMPTY;
@@ -151,20 +150,44 @@ public class UseHealingItemGoal extends Goal {
 
     private int findHealingSlot(boolean excludeEnchantedApple) {
         MercenaryInventory inv = this.mercenary.getMercenaryInventory();
+        float missingHealth = this.mercenary.getMaxHealth() - this.mercenary.getHealth();
+        int bestSlot = -1;
+        int bestScore = Integer.MIN_VALUE;
         for (int i = MercenaryInventory.SLOT_BAG_START; i < MercenaryInventory.SIZE; i++) {
             ItemStack stack = inv.getItem(i);
-            if (!stack.isEmpty() && isOutOfCombatHealingItem(stack)) {
-                if (excludeEnchantedApple && stack.getItem() == Items.ENCHANTED_GOLDEN_APPLE) {
-                    continue;
-                }
-                return i;
+            int score = getOutOfCombatHealingScore(stack, missingHealth, excludeEnchantedApple);
+            if (score > bestScore) {
+                bestSlot = i;
+                bestScore = score;
             }
         }
-        return -1;
+        return bestSlot;
     }
 
     private static boolean isOutOfCombatHealingItem(ItemStack stack) {
         return isHealingItem(stack) || MercenaryFoodUtil.isSafeFood(stack);
+    }
+
+    private static int getOutOfCombatHealingScore(ItemStack stack, float missingHealth, boolean excludeEnchantedApple) {
+        if (stack.isEmpty() || !isOutOfCombatHealingItem(stack)) {
+            return Integer.MIN_VALUE;
+        }
+        if (excludeEnchantedApple && stack.getItem() == Items.ENCHANTED_GOLDEN_APPLE) {
+            return Integer.MIN_VALUE;
+        }
+        if (isHealingItem(stack)) {
+            return missingHealth >= 8.0F ? 2000 : 500;
+        }
+
+        float foodHealing = MercenaryFoodUtil.getFoodHealingAmount(stack);
+        if (foodHealing <= 0.0F) {
+            return Integer.MIN_VALUE;
+        }
+        int score = 1000 - Math.round(Math.abs(foodHealing - missingHealth) * 25.0F);
+        if (foodHealing <= missingHealth + 1.0F) {
+            score += 100;
+        }
+        return score;
     }
 
     private static boolean isHealingEffect(MobEffectInstance eff) {

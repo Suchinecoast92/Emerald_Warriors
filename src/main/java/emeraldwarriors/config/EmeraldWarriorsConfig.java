@@ -5,7 +5,7 @@ import java.util.List;
 
 public final class EmeraldWarriorsConfig {
 
-    public int configVersion = 7;
+    public int configVersion = 8;
 
     public Toggles toggles = new Toggles();
     public Camp camp = new Camp();
@@ -19,13 +19,14 @@ public final class EmeraldWarriorsConfig {
     }
 
     public static final class Camp {
-        public int rarityChance = 450;
+        public int rarityChance = 530;
     }
 
     public static final class SolitarySpawn {
         public int weight = 1;
         public int minGroup = 1;
         public int maxGroup = 4;
+        public float naturalSpawnChance = 0.90F;
 
         public List<String> biomeWhitelist = new ArrayList<>();
 

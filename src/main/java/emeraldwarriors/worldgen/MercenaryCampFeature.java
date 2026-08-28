@@ -43,7 +43,11 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
         if (!cfg.toggles.camps) {
             return false;
         }
-        int chance = cfg.camp.rarityChance;
+        WorldGenLevel level = context.level();
+        BlockPos origin = context.origin();
+        BlockPos center = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, origin);
+
+        int chance = getEffectiveCampChance(level, center, cfg.camp.rarityChance);
         if (chance <= 0) {
             return false;
         }
@@ -52,9 +56,6 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
             return false;
         }
 
-        WorldGenLevel level = context.level();
-        BlockPos origin = context.origin();
-        BlockPos center = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, origin);
         RandomSource random = new LegacyRandomSource(ctxRandom.nextLong() ^ center.asLong());
         return generateCamp(level, center, random);
     }
@@ -189,6 +190,44 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
     private record WoodPalette(Block slab, Block fence) {
     }
 
+    private static int getEffectiveCampChance(WorldGenLevel level, BlockPos pos, int baseChance) {
+        if (baseChance <= 1) {
+            return baseChance;
+        }
+        if (hasSnowyOrPlainsCampPenalty(level, pos)) {
+            return Math.max(1, Math.round(baseChance / 0.95F));
+        }
+        return baseChance;
+    }
+
+    private static boolean hasSnowyOrPlainsCampPenalty(WorldGenLevel level, BlockPos pos) {
+        var biome = level.getBiome(pos);
+        String path = biome.unwrapKey()
+                .map(ResourceKey::identifier)
+                .map(Identifier::getPath)
+                .orElse("");
+        return biome.is(ConventionalBiomeTags.IS_SNOWY)
+                || biome.is(ConventionalBiomeTags.IS_ICY)
+                || biome.is(ConventionalBiomeTags.IS_PLAINS)
+                || path.contains("snow")
+                || path.contains("ice")
+                || path.contains("frozen")
+                || path.contains("plains");
+    }
+
+    private static boolean shouldPreserveSnowCover(WorldGenLevel level, BlockPos pos) {
+        var biome = level.getBiome(pos);
+        String path = biome.unwrapKey()
+                .map(ResourceKey::identifier)
+                .map(Identifier::getPath)
+                .orElse("");
+        return biome.is(ConventionalBiomeTags.IS_SNOWY)
+                || biome.is(ConventionalBiomeTags.IS_ICY)
+                || path.contains("snow")
+                || path.contains("ice")
+                || path.contains("frozen");
+    }
+
     private static WoodPalette getPaletteForBiome(WorldGenLevel level, BlockPos pos) {
         var biome = level.getBiome(pos);
         String path = level.getBiome(pos).unwrapKey()
@@ -289,22 +328,39 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
                     return false;
                 }
 
-                if (!level.getBlockState(top).isAir()) {
-                    level.setBlock(top, Blocks.AIR.defaultBlockState(), 2);
+                if (!isSoftSurfaceDecoration(level.getBlockState(top))) {
+                    return false;
                 }
                 for (int dy = 1; dy <= 3; dy++) {
                     BlockPos p = top.above(dy);
-                    if (level.getBlockState(p).is(Blocks.BEDROCK)) {
+                    BlockState state = level.getBlockState(p);
+                    if (state.is(Blocks.BEDROCK)) {
                         return false;
                     }
-                    level.setBlock(p, Blocks.AIR.defaultBlockState(), 2);
+                    if (!isSoftSurfaceDecoration(state)) {
+                        return false;
+                    }
                 }
             }
         }
         return true;
     }
 
+    private static boolean isSoftSurfaceDecoration(BlockState state) {
+        return state.isAir()
+                || state.is(Blocks.SNOW)
+                || state.is(Blocks.SHORT_GRASS)
+                || state.is(Blocks.TALL_GRASS)
+                || state.is(Blocks.FERN)
+                || state.is(Blocks.LARGE_FERN)
+                || state.is(Blocks.DEAD_BUSH);
+    }
+
     private static void placeBase(WorldGenLevel level, BlockPos center, RandomSource random) {
+        if (shouldPreserveSnowCover(level, center)) {
+            return;
+        }
+
         int radius = 5;
         for (int dx = -radius; dx <= radius; dx++) {
             for (int dz = -radius; dz <= radius; dz++) {
@@ -334,11 +390,19 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
         if (!level.getFluidState(pos).isEmpty()) {
             return false;
         }
-        if (!level.getBlockState(pos).isAir()) {
+        if (!isSoftSurfaceDecoration(level.getBlockState(pos))) {
             return false;
         }
         BlockPos below = pos.below();
         return level.getBlockState(below).isFaceSturdy(level, below, Direction.UP);
+    }
+
+    private static void placeCampBlock(WorldGenLevel level, BlockPos pos, BlockState state) {
+        BlockPos above = pos.above();
+        if (isSoftSurfaceDecoration(level.getBlockState(above))) {
+            level.setBlock(above, Blocks.AIR.defaultBlockState(), 2);
+        }
+        level.setBlock(pos, state, 2);
     }
 
     private static boolean isAdjacent2D(BlockPos a, BlockPos b) {
@@ -356,7 +420,7 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
         if (campfire.hasProperty(CampfireBlock.FACING)) {
             campfire = campfire.setValue(CampfireBlock.FACING, facing);
         }
-        level.setBlock(center, campfire, 2);
+        placeCampBlock(level, center, campfire);
 
         Set<BlockPos> occupied = new HashSet<>();
         occupied.add(center);
@@ -377,7 +441,7 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
                 continue;
             }
 
-            level.setBlock(pos, slab, 2);
+            placeCampBlock(level, pos, slab);
             seats.add(pos);
             occupied.add(pos);
         }
@@ -409,7 +473,7 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
                 continue;
             }
 
-            level.setBlock(pos, fence, 2);
+            placeCampBlock(level, pos, fence);
             occupied.add(pos);
             postCount--;
         }
@@ -428,7 +492,7 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
                 if (!canPlaceAt(level, pos)) {
                     continue;
                 }
-                level.setBlock(pos, Blocks.HAY_BLOCK.defaultBlockState(), 2);
+                placeCampBlock(level, pos, Blocks.HAY_BLOCK.defaultBlockState());
                 occupied.add(pos);
                 break;
             }
@@ -475,7 +539,7 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
                 continue;
             }
 
-            level.setBlock(chosen, leaves, 2);
+            placeCampBlock(level, chosen, leaves);
             occupied.add(chosen);
             leavesPos = chosen;
         }
@@ -502,7 +566,7 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
                         continue;
                     }
 
-                    level.setBlock(pos, leaves, 2);
+                    placeCampBlock(level, pos, leaves);
                     occupied.add(pos);
                     leavesPos = pos;
                     break;

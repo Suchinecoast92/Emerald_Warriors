@@ -1,4 +1,4 @@
-﻿{
+{
   "entity.emerald_warriors.emerald_mercenary": "Mercenario",
   "container.emerald_warriors.mercenary": "Mercenario",
   "item.emerald_warriors.emerald_mercenary_spawn_egg": "Generar mercenario",
@@ -29,8 +29,8 @@
   "emerald_warriors.contract.active": "Contrato activo.",
   "emerald_warriors.contract.started": "Contrato activo: %s.",
   "emerald_warriors.contract.extended": "Contrato extendido: +%1$s. Total: %2$s.",
-  "emerald_warriors.contract.ending": "Contrato por concluir.",
-  "emerald_warriors.contract.terminated": "Contrato finalizado.",
+  "emerald_warriors.contract.ending": "Contrato por concluir — %s",
+  "emerald_warriors.contract.terminated": "Contrato finalizado — %s",
   "emerald_warriors.contract.max": "Contrato al máximo.",
   "emerald_warriors.contract.renew_unavailable": "Renovación no disponible.",
   "emerald_warriors.contract.hire_available_in": "Contratación disponible en %s.",

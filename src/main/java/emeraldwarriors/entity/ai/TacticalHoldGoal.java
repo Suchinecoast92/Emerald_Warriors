@@ -80,7 +80,7 @@ public class TacticalHoldGoal extends Goal {
         }
     }
 
-    /** Misma velocidad que follow: goal 1.0 + boosts montados (equino/camello). */
+    /** Catalejo montado: trote (no el paso de FOLLOW a pie). A pie, el mismo ritmo del goal. */
     private double resolveHoldSpeed() {
         return this.mercenary.resolveNavigationSpeed(this.speedModifier);
     }

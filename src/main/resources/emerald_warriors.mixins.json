@@ -5,6 +5,7 @@
 	"mixins": [
 		"AbstractHorseRiderMixin",
 		"EntityPassengerMixin",
+		"MobAiAccessor",
 		"ExampleMixin",
 		"InstrumentItemMixin",
 		"SpawnPlacementsInvoker"

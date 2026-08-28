@@ -33,6 +33,7 @@ import emeraldwarriors.inventory.MercenaryInventory;
 import emeraldwarriors.inventory.MercenaryMenu;
 import emeraldwarriors.mount.MercenaryMountHelper;
 import emeraldwarriors.mount.MercenaryMountBehavior;
+import emeraldwarriors.mount.MercenaryMountSteering;
 import emeraldwarriors.mount.MercenaryMounts;
 import emeraldwarriors.mercenary.MercenaryOrder;
 import emeraldwarriors.mercenary.MercenaryRank;
@@ -133,8 +134,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private static final int MAX_STORED_CONTRACT_DAYS = 12;
     private static final int CONTRACT_ADMIRE_TICKS = 60;
     private static final boolean MERCENARY_DIALOGUE_ENABLED = false;
-    private static final int CONTRACT_EXPIRE_APPROACH_TICKS = 80;
-    private static final int CONTRACT_EXPIRE_RETREAT_DELAY_TICKS = 20;
+    public static final int CONTRACT_RENEW_WARN_TICKS = 3600;
+    private static final int CONTRACT_RENEW_WARN_PULSE_TICKS = 200;
+    private static final int CONTRACT_EXPIRE_APPROACH_TICKS = 300;
+    private static final int CONTRACT_EXPIRE_RETREAT_DELAY_TICKS = 40;
     private static final double CONTRACT_EXPIRE_RETREAT_SPEED = 0.65D;
     private static final double PLAYER_HOSTILITY_OBSERVE_RANGE = 16.0D;
     private static final double BROTHERHOOD_ASSIST_RANGE = 16.0D;
@@ -185,6 +188,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private int tacticalAttackTargetId = -1;
     private UUID tacticalAttackTargetUuid;
     private boolean tacticalAttackActive;
+    private UUID villagerDefenseTargetUuid;
     private EmeraldNearestAttackableTargetGoal nearestAttackableGoal;
 
     private MercenaryRole lastAppliedRole = null;
@@ -499,8 +503,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     };
 
     // Nombres aleatorios para mercenarios (estilo medieval/fantasy vanilla)
-    private static final String[] MERCENARY_NAMES = new String[] {
-            // Masculinos tradicionales
+    private static final String[] MERCENARY_MALE_NAMES = new String[] {
             "Aldric", "Bram", "Cedric", "Darian", "Edric", "Falk", "Garen", "Hadric", "Ivor", "Joran",
             "Kael", "Leoric", "Marek", "Noren", "Orik", "Perrin", "Roder", "Sven", "Torvin", "Ulric",
             "Varek", "Wulfric", "Yorik", "Zoren", "Alaric", "Beric", "Corvin", "Dain", "Eldric", "Fenric",
@@ -510,24 +513,23 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             "Niall", "Osmund", "Ragnar", "Silas", "Taran", "Viggo", "Wilfred", "Zarek", "Aeron", "Brand",
             "Cassian", "Doran", "Eryk", "Farlan", "Gideon", "Hasker", "Jorund", "Kester", "Lucan", "Morric",
             "Nash", "Odrin", "Pavel", "Rendall", "Stefan", "Theron", "Ulf", "Vern", "Warren", "Zedric",
-            // Más rudos/veteranos
             "Blacke", "Brakk", "Crow", "Dusk", "Fang", "Grim", "Hound", "Iron", "Knox", "Mace",
             "Rook", "Slate", "Thorn", "Vex", "Warden", "Ash", "Briar", "Crag", "Drake", "Flayer",
             "Grit", "Hawk", "Murk", "Raven", "Skorn", "Talon", "Varric", "Wrath",
-            // Aldeano/campesino armado
             "Bennet", "Cob", "Davin", "Eldo", "Fenn", "Giles", "Hob", "Jeb", "Kurt", "Lars",
             "Mikkel", "Ned", "Odo", "Piers", "Reeve", "Tobin", "Wilmer", "Yann", "Bardo", "Clem",
             "Denton", "Erwin", "Folke", "Garrick", "Harlan",
-            // Femeninos
+            "Clay", "Brick", "Moss", "Ash", "Oak", "Birch", "Flint", "Coal", "Dust", "Torch",
+            "Patch", "Wheat", "Copper", "Stone", "Reed", "Bark", "River", "Mud", "Gravel", "Slate",
+            "Cinder", "Tuff"
+    };
+
+    private static final String[] MERCENARY_FEMALE_NAMES = new String[] {
             "Adela", "Brina", "Celia", "Daria", "Elira", "Freya", "Greta", "Helga", "Ingrid", "Jora",
             "Kara", "Lena", "Mira", "Nadia", "Oriana", "Petra", "Rhea", "Sigrid", "Talia", "Vera",
             "Willa", "Ylva", "Zara", "Alina", "Brynn", "Corra", "Daphne", "Eira", "Fiora", "Gwen",
             "Hilda", "Ivana", "Jessa", "Kiera", "Lyra", "Maela", "Nerys", "Odette", "Runa", "Selka",
-            "Thyra", "Una", "Vilda", "Wren", "Ysra",
-            // Estilo Minecraft
-            "Clay", "Brick", "Moss", "Ash", "Oak", "Birch", "Flint", "Coal", "Dust", "Torch",
-            "Patch", "Wheat", "Copper", "Stone", "Reed", "Bark", "River", "Mud", "Gravel", "Slate",
-            "Cinder", "Tuff"
+            "Thyra", "Una", "Vilda", "Wren", "Ysra"
     };
 
     public EmeraldMercenaryEntity(EntityType<? extends EmeraldMercenaryEntity> type, Level level) {
@@ -542,6 +544,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     }
 
     private boolean contractRenewWarned = false;
+    private int contractRenewWarnPulseTicks;
 
     @Override
     protected void defineSynchedData(SynchedEntityData.Builder builder) {
@@ -739,7 +742,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             return true;
         }
         LivingEntity target = this.getTarget();
-        return target != null && this.isRecentAttacker(target);
+        if (target != null && this.isRecentAttacker(target)) {
+            return true;
+        }
+        return this.isRaidActive() && this.isVillagerDefenseTarget(target);
     }
 
     public BlockPos getTacticalHoldPos() {
@@ -1839,8 +1845,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         // Prioridad 1: Usar item de curación cuando tiene poca vida
         this.goalSelector.addGoal(1, new UseHealingItemGoal(this));
 
-        // Prioridad 2: Aviso preventivo de renovación (solo fuera de combate)
-        this.goalSelector.addGoal(2, new ContractRenewWarningGoal(this, 1.0D));
+        // Prioridad 1: acercarse al dueño en la ventana de aviso (el texto va en tick, no aquí)
+        this.goalSelector.addGoal(1, new ContractRenewWarningGoal(this, 1.15D));
 
         // Prioridad 2: Ir al punto marcado con catalejo y quedarse (táctico)
         this.goalSelector.addGoal(2, new TacticalHoldGoal(this, 1.0D));
@@ -1930,18 +1936,17 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
         MercenaryOrder order = this.getCurrentOrder();
         if (order == MercenaryOrder.GUARD || order == MercenaryOrder.PATROL) {
-            // Villager defense above general aggro so raids peel off to save villagers.
-            this.targetSelector.addGoal(0, this.hurtByTargetGoal);
+            // Defensa de aldea antes que el aggro general (nearest). Catalejo sigue en 0.
             this.targetSelector.addGoal(1, this.defendVillagerGoal);
-            this.targetSelector.addGoal(2, this.nearestAttackableGoal);
-            this.targetSelector.addGoal(3, this.protectOwnerGoal);
-            this.targetSelector.addGoal(4, this.ownerHurtTargetGoal);
-        } else {
-            this.targetSelector.addGoal(0, this.protectOwnerGoal);
-            this.targetSelector.addGoal(1, this.ownerHurtTargetGoal);
             this.targetSelector.addGoal(2, this.hurtByTargetGoal);
-            // FOLLOW: canUse only during raids; must outrank nothing critical but stay registered.
-            this.targetSelector.addGoal(3, this.defendVillagerGoal);
+            this.targetSelector.addGoal(3, this.nearestAttackableGoal);
+            this.targetSelector.addGoal(4, this.protectOwnerGoal);
+            this.targetSelector.addGoal(5, this.ownerHurtTargetGoal);
+        } else {
+            this.targetSelector.addGoal(1, this.defendVillagerGoal);
+            this.targetSelector.addGoal(2, this.protectOwnerGoal);
+            this.targetSelector.addGoal(3, this.ownerHurtTargetGoal);
+            this.targetSelector.addGoal(4, this.hurtByTargetGoal);
         }
     }
 
@@ -1975,12 +1980,73 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         return (p != null && p.isAlive()) ? p : null;
     }
 
+    public Player findOwnerPlayerAnywhere() {
+        UUID owner = this.ownerUuid;
+        if (owner == null || !(this.level() instanceof ServerLevel sl)) {
+            return null;
+        }
+        ServerPlayer p = sl.getServer().getPlayerList().getPlayer(owner);
+        return (p != null && p.isAlive()) ? p : null;
+    }
+
+    public boolean isInContractRenewWarnWindow() {
+        return this.ownerUuid != null
+                && this.contractTicksRemaining > 0
+                && this.contractTicksRemaining <= CONTRACT_RENEW_WARN_TICKS;
+    }
+
+    public boolean isContractExpireNotifying() {
+        return this.contractExpireNotifyTicks > 0 || this.contractExpireRetreatDelayTicks > 0;
+    }
+
     public boolean hasSentContractRenewWarning() {
         return this.contractRenewWarned;
     }
 
     public void markSentContractRenewWarning() {
         this.contractRenewWarned = true;
+    }
+
+    private void sendContractEndingSoon(Player player) {
+        if (player == null) {
+            return;
+        }
+        this.sendContractInfo(player, Component.translatable(
+                "emerald_warriors.contract.ending", this.getMercenaryName()));
+    }
+
+    private void sendContractEnded(Player player) {
+        if (player == null) {
+            return;
+        }
+        this.sendContractInfo(player, Component.translatable(
+                "emerald_warriors.contract.terminated", this.getMercenaryName()));
+    }
+
+    private void startContractRenewWarningPulse() {
+        this.contractRenewWarned = true;
+        this.contractRenewWarnPulseTicks = CONTRACT_RENEW_WARN_PULSE_TICKS;
+        this.sendContractEndingSoon(this.findOwnerPlayerAnywhere());
+    }
+
+    private void tickContractRenewWarningPulse() {
+        if (this.contractRenewWarnPulseTicks <= 0) {
+            return;
+        }
+        this.contractRenewWarnPulseTicks--;
+        if (this.contractRenewWarnPulseTicks > 0 && this.contractRenewWarnPulseTicks % 20 == 0) {
+            this.sendContractEndingSoon(this.findOwnerPlayerAnywhere());
+        }
+    }
+
+    private void maybeStartContractRenewWarningPulse() {
+        if (this.contractRenewWarned || !this.isInContractRenewWarnWindow()) {
+            return;
+        }
+        if (this.findOwnerPlayerAnywhere() == null) {
+            return;
+        }
+        this.startContractRenewWarningPulse();
     }
 
     public LivingEntity getOwner() {
@@ -2761,6 +2827,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         }
         this.contractTicksRemaining += days * TICKS_PER_DAY;
         this.contractRenewWarned = false;
+        this.contractRenewWarnPulseTicks = 0;
     }
 
     private boolean isOwnerDirectedTarget(LivingEntity target) {
@@ -2888,12 +2955,24 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         if (emeraldwarriors.mount.MercenaryMounts.isAlliedMercenaryMount(target, this)) {
             return;
         }
+        this.villagerDefenseTargetUuid = target.getUUID();
         super.setTarget(target);
         this.setAggressive(true);
     }
 
+    public boolean isVillagerDefenseTarget(LivingEntity target) {
+        return target != null
+                && this.villagerDefenseTargetUuid != null
+                && this.villagerDefenseTargetUuid.equals(target.getUUID());
+    }
+
     @Override
     public void setTarget(LivingEntity target) {
+        if (target == null
+                || this.villagerDefenseTargetUuid == null
+                || !this.villagerDefenseTargetUuid.equals(target.getUUID())) {
+            this.villagerDefenseTargetUuid = null;
+        }
         if (target != null) {
             if (target instanceof AbstractVillager || target instanceof IronGolem) {
                 return;
@@ -3112,6 +3191,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     @Override
     public void rideTick() {
+        if (!this.level().isClientSide() && this.getVehicle() instanceof AbstractHorse horse) {
+            MercenaryMountSteering.tickRider(this, horse);
+        }
         super.rideTick();
         if (this.getVehicle() instanceof AbstractHorse horse) {
             MercenaryMountBehavior.applyMountedPace(this, horse);
@@ -3123,6 +3205,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         Entity vehicle = this.getVehicle();
         super.stopRiding();
         if (vehicle instanceof AbstractHorse horse) {
+            MercenaryMountSteering.restoreControls(horse);
             horse.setSprinting(false);
         }
     }
@@ -3635,6 +3718,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 					}
 				}
 			}
+
+            this.maybeStartContractRenewWarningPulse();
+            this.tickContractRenewWarningPulse();
 
             // --- Owner presence and distance checks (every 20 ticks for performance) ---
             if (this.tickCount % 20 == 0 && this.ownerUuid != null && this.level() instanceof ServerLevel serverLvl) {
@@ -4444,13 +4530,12 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
         this.contractTicksRemaining = 0;
         this.contractExpirePending = false;
+        this.contractRenewWarnPulseTicks = 0;
         UUID exOwner = this.ownerUuid;
         Vec3 awayFrom = this.lastOwnerKnownPos;
-        if (exOwner != null) {
-            Player owner = this.level().getPlayerByUUID(exOwner);
-            if (owner != null) {
-                awayFrom = owner.position();
-            }
+        Player notifyPlayer = this.findPlayerAnywhere(exOwner);
+        if (notifyPlayer != null) {
+            awayFrom = notifyPlayer.position();
         }
 
         this.ownerUuid = null;
@@ -4474,6 +4559,19 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.contractExpireNotifyTicks = CONTRACT_EXPIRE_APPROACH_TICKS;
         this.contractExpireRetreatDelayTicks = 0;
         this.contractExpireNotified = false;
+
+        if (notifyPlayer != null) {
+            this.sendContractEnded(notifyPlayer);
+            this.contractExpireNotified = true;
+        }
+    }
+
+    private Player findPlayerAnywhere(UUID playerId) {
+        if (playerId == null || !(this.level() instanceof ServerLevel sl)) {
+            return null;
+        }
+        ServerPlayer p = sl.getServer().getPlayerList().getPlayer(playerId);
+        return (p != null && p.isAlive()) ? p : null;
     }
 
     private void tickContractExpireNotify() {
@@ -4483,14 +4581,18 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             return;
         }
 
-        if (this.getLastHurtByMob() != null && (this.tickCount - this.getLastHurtByMobTimestamp()) < 10) {
-            this.finishContractExpireNotifyAndRetreat(null);
-            return;
+        Player anyPlayer = this.findPlayerAnywhere(this.contractExpireNotifyPlayerUuid);
+        if (!this.contractExpireNotified && anyPlayer != null) {
+            this.sendContractEnded(anyPlayer);
+            this.contractExpireNotified = true;
         }
 
-        Player p = null;
+        Player localPlayer = null;
         if (this.contractExpireNotifyPlayerUuid != null) {
-            p = this.level().getPlayerByUUID(this.contractExpireNotifyPlayerUuid);
+            localPlayer = this.level().getPlayerByUUID(this.contractExpireNotifyPlayerUuid);
+            if (localPlayer != null && !localPlayer.isAlive()) {
+                localPlayer = null;
+            }
         }
 
         this.setTarget(null);
@@ -4499,14 +4601,22 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             this.stopUsingItem();
         }
 
+        boolean recentlyHurt = this.getLastHurtByMob() != null
+                && (this.tickCount - this.getLastHurtByMobTimestamp()) < 10;
+        if (recentlyHurt) {
+            Vec3 awayFrom = (localPlayer != null) ? localPlayer.position() : this.contractExpireAwayFromPos;
+            this.finishContractExpireNotifyAndRetreat(awayFrom);
+            return;
+        }
+
         if (this.contractExpireRetreatDelayTicks > 0) {
             this.contractExpireRetreatDelayTicks--;
-            this.getNavigation().stop();
-            if (p != null && p.isAlive()) {
-                this.getLookControl().setLookAt(p, 30.0F, this.getMaxHeadXRot());
+            this.getEffectiveNavigation().stop();
+            if (localPlayer != null) {
+                this.getLookControl().setLookAt(localPlayer, 30.0F, this.getMaxHeadXRot());
             }
             if (this.contractExpireRetreatDelayTicks <= 0) {
-                Vec3 awayFrom = (p != null && p.isAlive()) ? p.position() : this.contractExpireAwayFromPos;
+                Vec3 awayFrom = (localPlayer != null) ? localPlayer.position() : this.contractExpireAwayFromPos;
                 this.finishContractExpireNotifyAndRetreat(awayFrom);
             }
             return;
@@ -4516,34 +4626,28 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             this.contractExpireNotifyTicks--;
         }
 
-        if (p != null && p.isAlive()) {
-            this.getLookControl().setLookAt(p, 30.0F, this.getMaxHeadXRot());
-            if (this.distanceToSqr(p) > 16.0D) {
-                this.getNavigation().moveTo(p, 1.0D);
+        boolean closeEnough = localPlayer != null && this.distanceToSqr(localPlayer) <= 16.0D;
+        if (localPlayer != null) {
+            this.getLookControl().setLookAt(localPlayer, 30.0F, this.getMaxHeadXRot());
+            if (!closeEnough) {
+                this.getEffectiveNavigation().moveTo(localPlayer, this.resolveNavigationSpeed(1.15D));
             } else {
-                this.getNavigation().stop();
+                this.getEffectiveNavigation().stop();
             }
         } else {
-            this.getNavigation().stop();
+            this.getEffectiveNavigation().stop();
         }
 
-        boolean closeEnoughToNotify = p != null && p.isAlive() && this.distanceToSqr(p) <= 16.0D;
-        if (!this.contractExpireNotified && (closeEnoughToNotify || this.contractExpireNotifyTicks <= 0)) {
-            if (p == null || !p.isAlive()) {
-                this.finishContractExpireNotifyAndRetreat(this.contractExpireAwayFromPos);
-                return;
+        if (closeEnough || this.contractExpireNotifyTicks <= 0) {
+            if (!this.contractExpireNotified && anyPlayer != null) {
+                this.sendContractEnded(anyPlayer);
+                this.contractExpireNotified = true;
             }
-
-            this.sendContractInfo(p, Component.translatable("emerald_warriors.contract.ending"));
-            this.contractExpireNotified = true;
-            this.contractExpireRetreatDelayTicks = CONTRACT_EXPIRE_RETREAT_DELAY_TICKS;
-            this.contractExpireNotifyTicks = 0;
-            this.getNavigation().stop();
-            return;
-        }
-
-        if (this.contractExpireNotifyTicks <= 0 && !this.contractExpireNotified) {
-            this.finishContractExpireNotifyAndRetreat(this.contractExpireAwayFromPos);
+            if (this.contractExpireNotified || anyPlayer == null) {
+                this.contractExpireRetreatDelayTicks = CONTRACT_EXPIRE_RETREAT_DELAY_TICKS;
+                this.contractExpireNotifyTicks = 0;
+                this.getEffectiveNavigation().stop();
+            }
         }
     }
 
@@ -4900,6 +5004,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.ownerName = null;
         this.contractTicksRemaining = 0;
         this.contractRenewWarned = false;
+        this.contractRenewWarnPulseTicks = 0;
         this.contractExpirePending = false;
         this.currentContractBundlePayerUuid = null;
 
@@ -4943,7 +5048,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.refreshCombatRoleAndGoals();
 
         if (owner != null) {
-            this.sendContractInfo(owner, Component.translatable("emerald_warriors.contract.terminated"));
+            this.sendContractEnded(owner);
         }
     }
 
@@ -5277,17 +5382,35 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.skinId = skinId;
     }
 
+    private boolean usesFemaleNamePool() {
+        return this.getSkinId().endsWith("f");
+    }
+
+    private static boolean containsName(String[] names, String name) {
+        for (String candidate : names) {
+            if (candidate.equals(name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String generateMercenaryName() {
+        String[] names = this.usesFemaleNamePool() ? MERCENARY_FEMALE_NAMES : MERCENARY_MALE_NAMES;
+        long most = this.getUUID().getMostSignificantBits();
+        int index = Math.floorMod((int) (most ^ (most >>> 32)), names.length);
+        return names[index];
+    }
+
     /**
      * Obtiene el nombre aleatorio del mercenario.
      * Se asigna una vez basado en el UUID y se persiste.
      */
     public String getMercenaryName() {
-        if (this.mercenaryName == null || this.mercenaryName.isEmpty()) {
-            // Elegir un nombre "aleatorio" pero determinista usando el UUID persistente
-            long most = this.getUUID().getMostSignificantBits();
-            int base = (int) (most & 0x7FFFFFFFL); // valor no negativo
-            int index = base % MERCENARY_NAMES.length; // 0..(n-1)
-            this.mercenaryName = MERCENARY_NAMES[index];
+        if (this.mercenaryName == null
+                || this.mercenaryName.isEmpty()
+                || (this.usesFemaleNamePool() && !containsName(MERCENARY_FEMALE_NAMES, this.mercenaryName))) {
+            this.mercenaryName = this.generateMercenaryName();
         }
         return this.mercenaryName;
     }

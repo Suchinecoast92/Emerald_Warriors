@@ -6,8 +6,6 @@ import emeraldwarriors.mercenary.MercenaryOrder;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.effect.MobEffectInstance;
-import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.item.ItemStack;
@@ -107,7 +105,7 @@ public class RetreatLowHpGoal extends Goal {
                 }
 
                 if (didConsume && !this.consumedItem.isEmpty() && MercenaryFoodUtil.isSafeFood(this.consumedItem) && !UseHealingItemGoal.isHealingItem(this.consumedItem)) {
-                    this.mercenary.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 200, 0, false, false));
+                    MercenaryFoodUtil.applyFoodHealing(this.mercenary, this.consumedItem);
                 }
 
                 this.isHealing = false;
@@ -206,13 +204,38 @@ public class RetreatLowHpGoal extends Goal {
     private int findHealingSlot() {
         MercenaryInventory inv = this.mercenary.getMercenaryInventory();
         boolean allowFood = this.mercenary.getCurrentOrder() == MercenaryOrder.NEUTRAL;
+        float missingHealth = this.mercenary.getMaxHealth() - this.mercenary.getHealth();
+        int bestSlot = -1;
+        int bestScore = Integer.MIN_VALUE;
         for (int i = MercenaryInventory.SLOT_BAG_START; i < MercenaryInventory.SIZE; i++) {
             ItemStack stack = inv.getItem(i);
-            if (!stack.isEmpty() && (UseHealingItemGoal.isHealingItem(stack) || (allowFood && MercenaryFoodUtil.isSafeFood(stack)))) {
-                return i;
+            int score = getEmergencyHealingScore(stack, allowFood, missingHealth);
+            if (score > bestScore) {
+                bestSlot = i;
+                bestScore = score;
             }
         }
-        return -1;
+        return bestSlot;
+    }
+
+    private static int getEmergencyHealingScore(ItemStack stack, boolean allowFood, float missingHealth) {
+        if (stack.isEmpty()) {
+            return Integer.MIN_VALUE;
+        }
+        if (UseHealingItemGoal.isHealingItem(stack)) {
+            if (stack.is(Items.ENCHANTED_GOLDEN_APPLE)) {
+                return 4000;
+            }
+            return 3000;
+        }
+        if (!allowFood || !MercenaryFoodUtil.isSafeFood(stack)) {
+            return Integer.MIN_VALUE;
+        }
+        float foodHealing = MercenaryFoodUtil.getFoodHealingAmount(stack);
+        if (foodHealing <= 0.0F) {
+            return Integer.MIN_VALUE;
+        }
+        return 1000 + Math.round(Math.min(foodHealing, missingHealth) * 50.0F);
     }
 
     private void returnToBag(ItemStack stack) {

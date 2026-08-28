@@ -32,6 +32,9 @@ public class NeutralWanderGoal extends Goal {
         if (this.mercenary.isSleeping()) {
             return false;
         }
+        if (this.mercenary.isContractExpireNotifying()) {
+            return false;
+        }
         if (this.getCenter() == null) {
             return false;
         }
@@ -55,6 +58,9 @@ public class NeutralWanderGoal extends Goal {
             return false;
         }
         if (this.mercenary.isSleeping()) {
+            return false;
+        }
+        if (this.mercenary.isContractExpireNotifying()) {
             return false;
         }
         if (this.mercenary.getTarget() != null && this.mercenary.getTarget().isAlive()) {

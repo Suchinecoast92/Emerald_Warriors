@@ -8,6 +8,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.animal.equine.AbstractHorse;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.material.Fluids;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Autonomous mount decisions (v3.1): order/distance/weapon based movement,
@@ -28,8 +29,6 @@ public final class MercenaryMountBehavior {
 
     private static final double FOLLOW_MOUNT_DIST = 8.0D;
     private static final double FOLLOW_MOUNT_DIST_SQR = FOLLOW_MOUNT_DIST * FOLLOW_MOUNT_DIST;
-    private static final double FOLLOW_DISMOUNT_DIST = 3.0D;
-    private static final double FOLLOW_DISMOUNT_DIST_SQR = FOLLOW_DISMOUNT_DIST * FOLLOW_DISMOUNT_DIST;
 
     private static final double GUARD_TRAVEL_DIST = 10.0D;
     private static final double GUARD_TRAVEL_DIST_SQR = GUARD_TRAVEL_DIST * GUARD_TRAVEL_DIST;
@@ -40,9 +39,15 @@ public final class MercenaryMountBehavior {
 
     private static final int LEAD_TOGGLE_COOLDOWN = 20;
 
-    /** +20 % sobre el ritmo del goal fuera de combate. */
+    /** Ritmo montado actual (owner a pie caminando, FOLLOW). */
     private static final double MOUNTED_WALK_SPEED_BOOST = 1.2D;
-    /** +17,5 % extra en combate sobre el ritmo de viaje (galope/sprint). */
+    /** Catalejo: trote sobre el paso (más vivo que caminar, sin galope de sprint). */
+    private static final double MOUNTED_TROT_EXTRA = 1.25D;
+    /** Owner en su montura, sin sprint: un poco más que el paso para no quedarse atrás. */
+    private static final double MOUNTED_KEEP_UP_EXTRA = 1.15D;
+    /** Sprint vanilla (~+30 %) cuando el owner corre a pie o galopa montado. */
+    private static final double MOUNTED_GALLOP_EXTRA = 1.3D;
+    /** Combate montado sobre el ritmo de viaje. */
     private static final double MOUNTED_COMBAT_EXTRA_BOOST = 1.175D;
 
     private MercenaryMountBehavior() {
@@ -69,7 +74,9 @@ public final class MercenaryMountBehavior {
         boolean ownerOnFoot = owner != null && !ownerMounted;
 
         if (merc.isPassenger() && merc.getVehicle() instanceof AbstractHorse) {
-            releaseHorseLead(merc, horse);
+            if (isHorseLedByMerc(horse, merc)) {
+                horse.removeLeash();
+            }
             tickMounted(merc, horse, owner, ownerMounted);
             return;
         }
@@ -143,9 +150,12 @@ public final class MercenaryMountBehavior {
 
         MercenaryOrder order = merc.getCurrentOrder();
         if (order == MercenaryOrder.FOLLOW && owner != null) {
-            if (merc.distanceToSqr(owner) <= FOLLOW_DISMOUNT_DIST_SQR) {
+            if (MercenaryMountSteering.distanceToFollowSlotSqr(merc, owner) <= 2.25D) {
                 merc.stopRiding();
+                return;
             }
+            Vec3 slot = MercenaryMountSteering.getFollowSlot(merc, owner);
+            horse.getNavigation().moveTo(slot.x, slot.y, slot.z, resolveNavigationSpeed(merc, 1.0D));
             return;
         }
 
@@ -333,23 +343,59 @@ public final class MercenaryMountBehavior {
     }
 
     public static void applyMountedPace(EmeraldMercenaryEntity merc, AbstractHorse horse) {
-        // Sin sprint forzado: el galope lo marca solo el multiplicador de pathfinding.
-        horse.setSprinting(false);
+        MountedGait gait = resolveMountedGait(merc);
+        boolean moving = horse.getMoveControl().hasWanted()
+                || !horse.getNavigation().isDone()
+                || horse.getDeltaMovement().horizontalDistanceSqr() > 0.0025D;
+        // Walk usa la animación de paso. Trote/galope/keep-up activan el sprint vanilla de la montura.
+        horse.setSprinting(moving && gait != MountedGait.WALK);
     }
 
     /**
-     * Viaje: goalSpeed × 1.2 × escala montura. Combate: viaje × 1.175.
-     * Camello: escala extra desde su velocidad base para igualar ritmo equino.
+     * Viaje a pie del owner: goalSpeed × 1.2 × escala montura (ritmo actual).
+     * Trote (catalejo), keep-up (owner montado) y galope (owner sprint) se aplican encima.
      */
     public static double resolveNavigationSpeed(EmeraldMercenaryEntity merc, double goalSpeed) {
         if (!(merc.getVehicle() instanceof AbstractHorse mount)) {
             return goalSpeed;
         }
-        double travelSpeed = goalSpeed * MOUNTED_WALK_SPEED_BOOST * MercenaryMounts.getMountedNavigationScale(mount);
-        if (isMountedCombat(merc)) {
-            return travelSpeed * MOUNTED_COMBAT_EXTRA_BOOST;
+        double walkSpeed = goalSpeed * MOUNTED_WALK_SPEED_BOOST * MercenaryMounts.getMountedNavigationScale(mount);
+        return switch (resolveMountedGait(merc)) {
+            case WALK -> walkSpeed;
+            case TROT -> walkSpeed * MOUNTED_TROT_EXTRA;
+            case KEEP_UP -> walkSpeed * MOUNTED_KEEP_UP_EXTRA;
+            case GALLOP -> walkSpeed * MOUNTED_GALLOP_EXTRA;
+            case COMBAT -> walkSpeed * MOUNTED_COMBAT_EXTRA_BOOST;
+        };
+    }
+
+    private static MountedGait resolveMountedGait(EmeraldMercenaryEntity merc) {
+        if (merc.isTacticalHoldActive() || merc.isTacticalAttackActive()) {
+            return MountedGait.TROT;
         }
-        return travelSpeed;
+        if (isMountedCombat(merc)) {
+            return MountedGait.COMBAT;
+        }
+        if (merc.getCurrentOrder() == MercenaryOrder.FOLLOW) {
+            Player owner = merc.getContractOwnerPlayer();
+            if (owner != null) {
+                if (owner.isSprinting()) {
+                    return MountedGait.GALLOP;
+                }
+                if (owner.getVehicle() instanceof AbstractHorse) {
+                    return MountedGait.KEEP_UP;
+                }
+            }
+        }
+        return MountedGait.WALK;
+    }
+
+    private enum MountedGait {
+        WALK,
+        TROT,
+        KEEP_UP,
+        GALLOP,
+        COMBAT
     }
 
     private static boolean isInCombat(EmeraldMercenaryEntity merc) {

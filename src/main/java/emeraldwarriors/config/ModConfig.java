@@ -104,6 +104,18 @@ public final class ModConfig {
             config.configVersion = 7;
         }
 
+        if (config.configVersion < 8) {
+            if (config.camp != null && config.camp.rarityChance == 450) {
+                config.camp.rarityChance = 530;
+            }
+            if (config.solitarySpawn != null
+                    && (config.solitarySpawn.naturalSpawnChance <= 0.0F
+                    || config.solitarySpawn.naturalSpawnChance > 1.0F)) {
+                config.solitarySpawn.naturalSpawnChance = 0.90F;
+            }
+            config.configVersion = 8;
+        }
+
         save(path, config);
     }
 

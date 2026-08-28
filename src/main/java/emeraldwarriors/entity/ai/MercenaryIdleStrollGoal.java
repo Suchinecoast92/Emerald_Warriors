@@ -20,6 +20,9 @@ public class MercenaryIdleStrollGoal extends WaterAvoidingRandomStrollGoal {
         if (this.mercenary.isSleeping()) {
             return false;
         }
+        if (this.mercenary.isContractExpireNotifying()) {
+            return false;
+        }
         return super.canUse();
     }
 
@@ -29,6 +32,9 @@ public class MercenaryIdleStrollGoal extends WaterAvoidingRandomStrollGoal {
             return false;
         }
         if (this.mercenary.isSleeping()) {
+            return false;
+        }
+        if (this.mercenary.isContractExpireNotifying()) {
             return false;
         }
         return super.canContinueToUse();
