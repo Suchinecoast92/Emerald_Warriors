@@ -247,6 +247,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private MercenaryOrder currentOrder = MercenaryOrder.FOLLOW;
     private BlockPos guardPos;
     private BlockPos patrolCenter;
+    /** Clears patrol idle cooldown after healing retreat so PATROL resumes promptly. */
+    private boolean resumePatrolAfterRetreat;
     private BlockPos boundBedPos;
     private BlockPos reservedBedPos;
 
@@ -818,6 +820,54 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         }
         float fraction = this.getHealth() / this.getMaxHealth();
         return fraction >= this.getRank().getRetreatHpFraction();
+    }
+
+    /**
+     * After low-HP retreat/healing on GUARD/PATROL, drop chase from the fight that triggered
+     * retreat and path back toward the order anchor so guard/patrol goals can resume.
+     */
+    public void resumeOrderAnchorAfterRetreat() {
+        if (this.level().isClientSide()) {
+            return;
+        }
+        MercenaryOrder order = this.getCurrentOrder();
+        if (order != MercenaryOrder.GUARD && order != MercenaryOrder.PATROL) {
+            return;
+        }
+
+        LivingEntity target = this.getTarget();
+        if (target != null && !this.isTacticalDirectedTarget(target)) {
+            this.setTarget(null);
+            this.setAggressive(false);
+        }
+        this.selfLastHurtByMobTimestampBaseline = this.getLastHurtByMobTimestamp();
+
+        BlockPos anchor = order == MercenaryOrder.GUARD ? this.guardPos : this.patrolCenter;
+        if (anchor == null) {
+            return;
+        }
+
+        if (order == MercenaryOrder.PATROL) {
+            this.resumePatrolAfterRetreat = true;
+        }
+
+        if (this.distanceToSqr(anchor.getX() + 0.5, anchor.getY(), anchor.getZ() + 0.5) <= 2.25D) {
+            return;
+        }
+
+        double returnY = CombatTactics.getGuardReturnY(this, anchor);
+        double speed = order == MercenaryOrder.GUARD ? 1.0D : 0.9D;
+        this.getEffectiveNavigation().moveTo(
+                anchor.getX() + 0.5, returnY, anchor.getZ() + 0.5,
+                this.resolveNavigationSpeed(speed));
+    }
+
+    public boolean consumeResumePatrolAfterRetreat() {
+        if (!this.resumePatrolAfterRetreat) {
+            return false;
+        }
+        this.resumePatrolAfterRetreat = false;
+        return true;
     }
 
     private void tickTacticalState() {

@@ -28,6 +28,9 @@ public class PatrolAroundPointGoal extends Goal {
         if (order != MercenaryOrder.PATROL) {
             return false;
         }
+        if (this.mercenary.consumeResumePatrolAfterRetreat()) {
+            this.cooldown = 0;
+        }
         if (this.mercenary.getPatrolCenter() == null) {
             return false;
         }
@@ -101,6 +104,11 @@ public class PatrolAroundPointGoal extends Goal {
 
     @Override
     public void stop() {
-        this.cooldown = 60 + this.mercenary.getRandom().nextInt(40);
+        // Short pause if combat/healing interrupted mid-path; longer after finishing a leg.
+        if (this.mercenary.getEffectiveNavigation().isDone()) {
+            this.cooldown = 60 + this.mercenary.getRandom().nextInt(40);
+        } else {
+            this.cooldown = 20;
+        }
     }
 }

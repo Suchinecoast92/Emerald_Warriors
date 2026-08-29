@@ -8,7 +8,6 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.animal.equine.AbstractHorse;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.material.Fluids;
-import net.minecraft.world.phys.Vec3;
 
 /**
  * Autonomous mount decisions (v3.1): order/distance/weapon based movement,
@@ -71,7 +70,6 @@ public final class MercenaryMountBehavior {
         boolean ownerMounted = owner != null
                 && owner.isPassenger()
                 && owner.getVehicle() instanceof LivingEntity;
-        boolean ownerOnFoot = owner != null && !ownerMounted;
 
         if (merc.isPassenger() && merc.getVehicle() instanceof AbstractHorse) {
             if (isHorseLedByMerc(horse, merc)) {
@@ -92,7 +90,7 @@ public final class MercenaryMountBehavior {
             return;
         }
 
-        if (shouldLeadHorseOnFoot(merc, horse, owner, ownerOnFoot)) {
+        if (shouldLeadHorseOnFoot(merc, horse, owner)) {
             tickHorseFollow(merc, horse);
         } else {
             releaseHorseFollow(merc, horse);
@@ -150,7 +148,9 @@ public final class MercenaryMountBehavior {
 
         MercenaryOrder order = merc.getCurrentOrder();
         if (order == MercenaryOrder.FOLLOW && owner != null) {
-            if (MercenaryMountSteering.distanceToFollowSlotSqr(merc, owner) <= 2.25D) {
+            // Stay mounted while the owner rides; only dismount to walk beside them on foot.
+            if (!ownerMounted
+                    && MercenaryMountSteering.distanceToFollowSlotSqr(merc, owner) <= 2.25D) {
                 merc.stopRiding();
                 return;
             }
@@ -195,7 +195,8 @@ public final class MercenaryMountBehavior {
             return merc.distanceToSqr(horse) <= HORSE_AVAILABLE_RANGE_SQR;
         }
 
-        if (ownerMounted) {
+        // Owner mounts → FOLLOW mercs remount. NEUTRAL leaves the horse alone (stabling).
+        if (ownerMounted && merc.getCurrentOrder() == MercenaryOrder.FOLLOW) {
             return merc.distanceToSqr(horse) <= HORSE_AVAILABLE_RANGE_SQR;
         }
 
@@ -228,13 +229,16 @@ public final class MercenaryMountBehavior {
         return merc.distanceToSqr(center.getX() + 0.5, center.getY(), center.getZ() + 0.5) > PATROL_TRAVEL_DIST_SQR;
     }
 
+    /**
+     * Bound horse pathfinds to the merc while they are on foot in FOLLOW/GUARD/PATROL.
+     * NEUTRAL does not pull the horse so the player can lead it to a stable.
+     */
     private static boolean shouldLeadHorseOnFoot(
             EmeraldMercenaryEntity merc,
             AbstractHorse horse,
-            Player owner,
-            boolean ownerOnFoot
+            Player owner
     ) {
-        if (!ownerOnFoot || owner == null) {
+        if (owner == null) {
             return false;
         }
         if (merc.distanceToSqr(horse) > HORSE_AVAILABLE_RANGE_SQR) {
@@ -243,36 +247,16 @@ public final class MercenaryMountBehavior {
         if (horse.isVehicle() || !horse.getPassengers().isEmpty()) {
             return false;
         }
-        if (isInWaterOrUnsafe(merc)) {
+        if (isInWaterOrUnsafe(merc) || isInWaterOrUnsafe(horse)) {
             return false;
         }
 
         MercenaryOrder order = merc.getCurrentOrder();
-        if (order != MercenaryOrder.FOLLOW
-                && order != MercenaryOrder.GUARD
-                && order != MercenaryOrder.PATROL) {
-            return false;
-        }
-
-        if (merc.isTacticalHoldActive() && merc.getTacticalHoldPos() != null) {
-            return merc.distanceToSqr(horse) <= HORSE_AVAILABLE_RANGE_SQR;
-        }
-
-        if (order == MercenaryOrder.FOLLOW) {
-            return !merc.isSystemForcedNone()
-                    && merc.distanceToSqr(owner) <= FOLLOW_MOUNT_DIST_SQR * 4.0D;
-        }
-
-        if (order == MercenaryOrder.GUARD) {
-            BlockPos guard = merc.getGuardPos();
-            if (guard == null) {
-                return false;
-            }
-            double distGuard = merc.distanceToSqr(guard.getX() + 0.5, guard.getY(), guard.getZ() + 0.5);
-            return distGuard <= GUARD_ARRIVE_DIST_SQR * 4.0D;
-        }
-
-        return !merc.getEffectiveNavigation().isDone();
+        return switch (order) {
+            case FOLLOW -> !merc.isSystemForcedNone();
+            case GUARD, PATROL -> true;
+            case NEUTRAL -> false;
+        };
     }
 
     private static void approachAndMount(EmeraldMercenaryEntity merc, AbstractHorse horse) {
@@ -309,7 +293,8 @@ public final class MercenaryMountBehavior {
             horse.getNavigation().stop();
             return;
         }
-        horse.getNavigation().moveTo(merc, 1.15D);
+        // modifier × MOVEMENT_SPEED: respeta stats del individuo; camello lleva escala extra.
+        horse.getNavigation().moveTo(merc, MercenaryMounts.resolveLooseFollowSpeedModifier(horse));
     }
 
 

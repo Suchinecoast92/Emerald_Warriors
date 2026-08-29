@@ -48,8 +48,9 @@ public final class MercenaryMountedPathSync {
         double horizDist = Math.sqrt(
                 (node.x - horse.getX()) * (node.x - horse.getX())
                         + (node.z - horse.getZ()) * (node.z - horse.getZ()));
-        if (horizDist < 3.0D) {
-            resolvedSpeed *= Mth.lerp((float) (horizDist / 3.0D), 0.55F, 1.0F);
+        // Soft arrive: evita frenar demasiado en cada nodo (se notaba sobre todo en camellos).
+        if (horizDist < 2.5D) {
+            resolvedSpeed *= Mth.lerp((float) (horizDist / 2.5D), 0.72F, 1.0F);
         }
 
         mountNav.steerToward(node.x, node.y, node.z, resolvedSpeed);

@@ -23,10 +23,15 @@ public final class MercenaryMounts {
     /** Ritmo de referencia de equinos domados (caballo medio en vanilla). */
     private static final double EQUINE_REFERENCE_MOVEMENT_SPEED = 0.225D;
     /**
-     * El camello camina más lento con IA que un equino al mismo goalSpeed; compensamos
-     * para que el ritmo montado se sienta similar tras los boosts globales.
+     * El camello tiene ~0.09 de MOVEMENT_SPEED (equino medio ~0.225). Sin escala, la IA
+     * lo deja a cámara lenta. Compensamos para igualar el ritmo de un caballo medio;
+     * caballo/burro/mula siguen en 1.0 y conservan su atributo individual en MoveControl.
      */
     private static final double CAMEL_MOUNTED_NAV_FLOOR = 1.55D;
+    /** Extra por desvíos del pathfinding (el camello pagaba más con nodos anchos). */
+    private static final double CAMEL_PATHFIND_COMPENSATION = 1.10D;
+    /** Velocidad base al seguir al mercenario a pie ({@code modifier × MOVEMENT_SPEED}). */
+    private static final double LOOSE_FOLLOW_SPEED = 1.10D;
 
     private MercenaryMounts() {
     }
@@ -51,18 +56,37 @@ public final class MercenaryMounts {
     }
 
     /**
-     * Escala extra de pathfinding montado según la velocidad base de la montura.
-     * Equinos: 1.0. Camello: ratio respecto al caballo medio, con piso para no ir a cámara lenta.
+     * Escala de pathfinding IA según especie.
+     * <ul>
+     *   <li>Equinos: {@code 1.0} — la velocidad real sale de {@code modifier × MOVEMENT_SPEED}
+     *       (caballo rápido vs burro lento se nota).</li>
+     *   <li>Camello: sube el modifier para compensar su atributo bajo (~0.09).</li>
+     * </ul>
      */
     public static double getMountedNavigationScale(AbstractHorse mount) {
         if (!isCamel(mount)) {
             return 1.0D;
         }
-        double baseSpeed = mount.getAttributeValue(Attributes.MOVEMENT_SPEED);
+        // Base value: evita que el sprint temporal reduzca la escala y frene al camello.
+        double baseSpeed = mount.getAttributeBaseValue(Attributes.MOVEMENT_SPEED);
         if (baseSpeed <= 0.0D) {
-            return CAMEL_MOUNTED_NAV_FLOOR;
+            return CAMEL_MOUNTED_NAV_FLOOR * CAMEL_PATHFIND_COMPENSATION;
         }
-        return Math.max(CAMEL_MOUNTED_NAV_FLOOR, EQUINE_REFERENCE_MOVEMENT_SPEED / baseSpeed);
+        double scale = EQUINE_REFERENCE_MOVEMENT_SPEED / baseSpeed;
+        return Math.max(CAMEL_MOUNTED_NAV_FLOOR, scale) * CAMEL_PATHFIND_COMPENSATION;
+    }
+
+    /**
+     * Modifier para {@code navigation.moveTo} / steer de la montura suelta o montada.
+     * La velocidad en bloques/s sigue siendo {@code modifier × Attributes.MOVEMENT_SPEED}.
+     */
+    public static double resolveAiMoveSpeedModifier(AbstractHorse mount, double baseModifier) {
+        return baseModifier * getMountedNavigationScale(mount);
+    }
+
+    /** Caballo/burro/mula/camello siguiendo a su mercenario a pie. */
+    public static double resolveLooseFollowSpeedModifier(AbstractHorse mount) {
+        return resolveAiMoveSpeedModifier(mount, LOOSE_FOLLOW_SPEED);
     }
 
     /** Levanta camellos sentados antes de montar o moverse con ellos. */

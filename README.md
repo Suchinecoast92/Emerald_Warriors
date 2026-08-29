@@ -106,10 +106,10 @@ El mensaje muestra el **nombre de la montura** (`[🐴] Relámpago vinculado.`).
 
 **Comportamiento autónomo**
 - Decide cuándo montar, bajar o ir a pie según orden, distancia, arma y combate.
-- **Follow:** monta si está lejos; baja cerca del dueño (salvo lanza).
+- **Follow:** monta si el dueño va montado (cerca de su caballo) o si está lejos a pie; **permanece montado** mientras tú sigas a caballo; baja solo cuando estás a pie y cerca (salvo lanza).
 - **Guard / Patrol:** monta para desplazarse; baja al llegar o en melee con espada.
-- **Neutral:** mayormente a pie.
-- A pie y lejos: la montura **sigue al mercenario por pathfinding** (no se ata con correa vanilla de forma continua; eso evitaba bucles al ir a un hold con catalejo).
+- **Neutral:** desmonta; la montura **no sigue** al mercenario (puedes llevarla con correa al establo). No remonta solo aunque montes tú.
+- A pie en **Follow / Guard / Patrol:** la montura **sigue al mercenario por pathfinding** (no correa vanilla continua).
 - Si el hold táctico está lejos, el mercenario **prefiere montar** e ir a caballo hasta el punto.
 - Anti-teleport: camina hasta la montura (~2,5 bloques) antes de subir.
 - **Control del jinete:** el mercenario montado dirige la montura (patrulla, persecución y combate). Vanilla solo reconoce a jugadores como conductores; el mod declara al mercenario como jinete controlador para desactivar la IA de deambular del caballo/camello.
@@ -152,7 +152,7 @@ El mensaje muestra el **nombre de la montura** (`[🐴] Relámpago vinculado.`).
 | Viaje (fuera de combate) | `goalSpeed × 1,2` (× escala camello si aplica) |
 | Combate | viaje `× 1,175` (galope moderado) |
 
-Equinos usan escala 1,0. Camello: al menos ×1,55 respecto a su velocidad base, o más si su atributo es menor que un caballo medio.
+Equinos usan escala 1,0: un caballo rápido va más rápido que un burro (atributo `MOVEMENT_SPEED` individual). Camello: compensación sobre su velocidad base (~0,09) para acercarse al ritmo de un caballo medio, también al **seguir al mercenario a pie**.
 
 Ejemplos: follow 1,0 → 1,20 viaje / 1,41 combate; patrol 0,9 → 1,08 / 1,27.
 
@@ -163,6 +163,7 @@ Ejemplos: follow 1,0 → 1,20 viaje / 1,41 combate; patrol 0,9 → 1,08 / 1,27.
 ### IA de combate
 - Goals separados para melee, arco y ballesta.
 - Escudo reactivo, strafe en cooldown y retirada con poca vida.
+- Tras **huir y curarse** en GUARD/PATROL, vuelve a su ancla y retoma defensa o patrulla (salvo que lo sigan atacando o tenga un ataque táctico del catalejo activo).
 - Melee estilo vanilla (como lobos/zombis): todos persiguen y golpean al objetivo; un apiñamiento leve es normal al estar adyacentes.
 - Si hay aliados cerca atacando lo mismo, cada mercenario puede buscar un punto lateral cercano (offset suave) para no pelear por el mismo bloque — sin flanqueo táctico ni formaciones.
 - **Ranged (arco/ballesta):** evita friendly fire; con línea de visión y ventaja de altura permanece en su posición y dispara (como esqueletos/pillagers). Cabeza, brazos y arma apuntan al objetivo antes de disparar.
@@ -206,7 +207,7 @@ El mercenario **nunca** targetea a su dueño actual.
 
 ### GUI e inventario
 - Equipo (armadura, arma, offhand) + mochila 3×3.
-- Barra de vida, XP y toggle de jugadores.
+- Barra de vida con **animación vanilla** (parpadeo al curar, drenaje al recibir daño), XP y toggle de jugadores.
 - Botón para finalizar contrato (con confirmación).
 
 ### Mundo
@@ -248,7 +249,7 @@ Archivo `config/emerald_warriors.json` (se crea al primer arranque):
 2. **Contrato en dos clics** con esmeralda (propuesta → confirmar en 10 s). Renovar: shift + clic con esmeraldas (múltiplos exactos de la tarifa).
 3. **Órdenes base** (FOLLOW/GUARD/PATROL/NEUTRAL) y **órdenes tácticas del catalejo** son cosas distintas: el catalejo mueve o ataca sin cambiar la orden base. El hold **persiste al relog**.
 4. **Cuerno y catalejo** mandan a 128 bloques. Vincula mercenarios con shift + clic derecho; el clic normal (cuerno) o el clic izquierdo apuntando (catalejo) aplica la orden.
-5. **Monturas:** la correa solo sirve para **vincular/desvincular**. Después la montura sigue sola; no esperes una correa vanilla permanente.
+5. **Monturas:** la correa solo sirve para **vincular/desvincular**. En FOLLOW/GUARD/PATROL la montura sigue al merc a pie; en **NEUTRAL** no la sigue (establo). Si montas tú, los mercs en FOLLOW suben y **no bajan** mientras sigas montado.
 6. **Camello compartido:** el mercenario es el conductor (asiento delantero); tú vas atrás si subes cuando él ya está montado.
 7. **No dispares a caballos del grupo a propósito:** igual no deberían targetearlos, pero el daño de área/proyectiles vanilla sigue existiendo.
 8. **PvP:** el toggle **Jugadores ON/OFF** solo controla agresión automática. Si tú atacas primero, te ayudan aunque esté OFF. Si te golpean al mercenario, se defiende siempre.
@@ -293,4 +294,4 @@ No se concede permiso para copiar, modificar, distribuir ni crear obras derivada
 
 ---
 
-**Estado:** v1.0.0 — hold táctico persistente, monturas aliadas protegidas, camello con asientos correctos y defensa de aldeanos en raid en `main`.
+**Estado:** v1.0.0 — monturas pulidas (follow montado, NEUTRAL/establo, velocidad por tipo), retorno al ancla tras curarse, corazones animados en GUI.

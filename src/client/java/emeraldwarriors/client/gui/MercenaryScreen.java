@@ -154,14 +154,15 @@ public class MercenaryScreen extends AbstractContainerScreen<MercenaryMenu> {
         // --- Zona de información del mercenario (coordenadas relativas al panel) ---
         int infoX = 62;
 
-        // Fila de corazones
+        // Fila de corazones (animación vanilla: parpadeo al curar / drenaje al recibir daño)
         int heartsY = 18;
-
-        // Valores base desde ContainerData sincronizado por el servidor
         int health = this.menu.getMercHealth();
         int maxHealth = this.menu.getMercMaxHealth();
+        if (maxHealth <= 0) {
+            maxHealth = 1;
+        }
+        int maxHeartsToDraw = Math.min((maxHealth + 1) / 2, 10);
 
-        // Intentar usar la entidad cliente para reflejar la vida en tiempo real
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level != null) {
             int entityId = this.menu.getMercEntityId();
@@ -170,23 +171,16 @@ public class MercenaryScreen extends AbstractContainerScreen<MercenaryMenu> {
                 if (e instanceof EmeraldMercenaryEntity merc) {
                     health = (int) Math.ceil(merc.getHealth());
                     maxHealth = (int) Math.ceil(merc.getMaxHealth());
+                    maxHeartsToDraw = Math.min((maxHealth + 1) / 2, 10);
+                    MercenaryHeartRenderer.render(g, merc, infoX, heartsY, maxHeartsToDraw);
+                } else {
+                    renderStaticHearts(g, infoX, heartsY, health, maxHeartsToDraw);
                 }
+            } else {
+                renderStaticHearts(g, infoX, heartsY, health, maxHeartsToDraw);
             }
-        }
-        if (maxHealth <= 0) {
-            maxHealth = 1;
-        }
-        int totalHearts = (maxHealth + 1) / 2;
-        int heartsToDraw = Math.min(totalHearts, 10);
-        for (int i = 0; i < heartsToDraw; i++) {
-            int hx = infoX + i * 9;
-            g.blitSprite(RenderPipelines.GUI_TEXTURED, HEART_CONTAINER, hx, heartsY, 9, 9);
-            int heartHealth = (i + 1) * 2;
-            if (health >= heartHealth) {
-                g.blitSprite(RenderPipelines.GUI_TEXTURED, HEART_FULL, hx, heartsY, 9, 9);
-            } else if (health == heartHealth - 1) {
-                g.blitSprite(RenderPipelines.GUI_TEXTURED, HEART_HALF, hx, heartsY, 9, 9);
-            }
+        } else {
+            renderStaticHearts(g, infoX, heartsY, health, maxHeartsToDraw);
         }
 
         // Etiqueta "EXP"
@@ -229,6 +223,19 @@ public class MercenaryScreen extends AbstractContainerScreen<MercenaryMenu> {
         }
         MercenaryOrder order = MercenaryOrder.values()[ordinal];
         return order == MercenaryOrder.FOLLOW || order == MercenaryOrder.GUARD || order == MercenaryOrder.PATROL;
+    }
+
+    private void renderStaticHearts(GuiGraphics g, int infoX, int heartsY, int health, int heartsToDraw) {
+        for (int i = 0; i < heartsToDraw; i++) {
+            int hx = infoX + i * 9;
+            g.blitSprite(RenderPipelines.GUI_TEXTURED, HEART_CONTAINER, hx, heartsY, 9, 9);
+            int heartHealth = (i + 1) * 2;
+            if (health >= heartHealth) {
+                g.blitSprite(RenderPipelines.GUI_TEXTURED, HEART_FULL, hx, heartsY, 9, 9);
+            } else if (health == heartHealth - 1) {
+                g.blitSprite(RenderPipelines.GUI_TEXTURED, HEART_HALF, hx, heartsY, 9, 9);
+            }
+        }
     }
 
     private void updateTerminateButton() {

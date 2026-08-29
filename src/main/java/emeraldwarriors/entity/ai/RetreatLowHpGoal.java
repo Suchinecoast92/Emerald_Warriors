@@ -159,6 +159,7 @@ public class RetreatLowHpGoal extends Goal {
         this.mercenary.getNavigation().stop();
         this.threat = null;
         this.retreatAnchor = null;
+        this.mercenary.resumeOrderAnchorAfterRetreat();
     }
 
     private void tryStartHealing() {
