@@ -138,7 +138,11 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private static final int CONTRACT_ADMIRE_TICKS = 60;
     private static final boolean MERCENARY_DIALOGUE_ENABLED = false;
     public static final int CONTRACT_RENEW_WARN_TICKS = 3600;
-    private static final int CONTRACT_RENEW_WARN_PULSE_TICKS = 200;
+    /** One action-bar notice per minute in the last 3 minutes (3 notices total). */
+    private static final int CONTRACT_RENEW_WARN_INTERVAL_TICKS = 1200;
+    private static final int CONTRACT_RENEW_WARN_MAX = 3;
+    /** How long each notice tries to walk toward the owner (~10s). */
+    private static final int CONTRACT_RENEW_APPROACH_ATTEMPT_TICKS = 200;
     private static final int CONTRACT_EXPIRE_APPROACH_TICKS = 300;
     private static final int CONTRACT_EXPIRE_RETREAT_DELAY_TICKS = 40;
     private static final double CONTRACT_EXPIRE_RETREAT_SPEED = 0.65D;
@@ -548,8 +552,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.setPathfindingMalus(PathType.WALKABLE_DOOR, 0.0F);
     }
 
-    private boolean contractRenewWarned = false;
-    private int contractRenewWarnPulseTicks;
+    private int contractRenewWarnCount;
+    private int contractRenewApproachTicks;
 
     @Override
     protected void defineSynchedData(SynchedEntityData.Builder builder) {
@@ -1312,8 +1316,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             output.putInt("ContractTicks", this.contractTicksRemaining);
         }
 
-        if (this.contractRenewWarned) {
-            output.putInt("ContractRenewWarned", 1);
+        if (this.contractRenewWarnCount > 0) {
+            output.putInt("ContractRenewWarnCount", this.contractRenewWarnCount);
         }
         if (this.contractExpirePending) {
             output.putInt("ContractExpirePending", 1);
@@ -1514,7 +1518,12 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         });
 
         this.contractTicksRemaining = input.getIntOr("ContractTicks", this.contractTicksRemaining);
-        this.contractRenewWarned = input.getIntOr("ContractRenewWarned", this.contractRenewWarned ? 1 : 0) != 0;
+        this.contractRenewWarnCount = Math.max(0, input.getIntOr("ContractRenewWarnCount", this.contractRenewWarnCount));
+        if (this.contractRenewWarnCount <= 0
+                && input.getIntOr("ContractRenewWarned", 0) != 0) {
+            // Legacy flag: treat prior warning as already delivered for the current minute bucket.
+            this.contractRenewWarnCount = contractRenewWarnIndexForRemaining(this.contractTicksRemaining);
+        }
         this.contractExpirePending = input.getIntOr("ContractExpirePending", this.contractExpirePending ? 1 : 0) != 0;
 
         input.getString("MercenaryRank").ifPresent(value -> {
@@ -2053,11 +2062,16 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     }
 
     public boolean hasSentContractRenewWarning() {
-        return this.contractRenewWarned;
+        return this.contractRenewWarnCount > 0;
     }
 
     public void markSentContractRenewWarning() {
-        this.contractRenewWarned = true;
+        this.contractRenewWarnCount = Math.max(this.contractRenewWarnCount, 1);
+    }
+
+    /** True while a renew-notice approach attempt is active (not the whole 3-minute window). */
+    public boolean wantsContractRenewApproach() {
+        return this.contractRenewApproachTicks > 0;
     }
 
     private void sendContractEndingSoon(Player player) {
@@ -2076,30 +2090,46 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                 "emerald_warriors.contract.terminated", this.getMercenaryName()));
     }
 
-    private void startContractRenewWarningPulse() {
-        this.contractRenewWarned = true;
-        this.contractRenewWarnPulseTicks = CONTRACT_RENEW_WARN_PULSE_TICKS;
-        this.sendContractEndingSoon(this.findOwnerPlayerAnywhere());
+    /**
+     * How many of the 3 minute-bucket notices should already have been sent
+     * for the given remaining contract ticks (1 at ~3:00, 2 at ~2:00, 3 at ~1:00).
+     */
+    private static int contractRenewWarnIndexForRemaining(int remainingTicks) {
+        if (remainingTicks <= 0 || remainingTicks > CONTRACT_RENEW_WARN_TICKS) {
+            return 0;
+        }
+        int elapsedInWindow = CONTRACT_RENEW_WARN_TICKS - remainingTicks;
+        return Math.min(CONTRACT_RENEW_WARN_MAX, 1 + (elapsedInWindow / CONTRACT_RENEW_WARN_INTERVAL_TICKS));
     }
 
-    private void tickContractRenewWarningPulse() {
-        if (this.contractRenewWarnPulseTicks <= 0) {
+    /**
+     * Action-bar renew reminders once per minute in the last 3 minutes (3 total).
+     * Each notice also starts a short approach attempt if the AI can walk over;
+     * the message is sent even when approach is impossible (combat, distance, etc.).
+     */
+    private void tickContractRenewWarning() {
+        if (!this.isInContractRenewWarnWindow()) {
+            this.contractRenewApproachTicks = 0;
             return;
         }
-        this.contractRenewWarnPulseTicks--;
-        if (this.contractRenewWarnPulseTicks > 0 && this.contractRenewWarnPulseTicks % 20 == 0) {
-            this.sendContractEndingSoon(this.findOwnerPlayerAnywhere());
-        }
-    }
 
-    private void maybeStartContractRenewWarningPulse() {
-        if (this.contractRenewWarned || !this.isInContractRenewWarnWindow()) {
+        if (this.contractRenewApproachTicks > 0) {
+            this.contractRenewApproachTicks--;
+        }
+
+        Player owner = this.findOwnerPlayerAnywhere();
+        if (owner == null) {
             return;
         }
-        if (this.findOwnerPlayerAnywhere() == null) {
+
+        int targetCount = contractRenewWarnIndexForRemaining(this.contractTicksRemaining);
+        if (this.contractRenewWarnCount >= targetCount) {
             return;
         }
-        this.startContractRenewWarningPulse();
+
+        this.contractRenewWarnCount++;
+        this.sendContractEndingSoon(owner);
+        this.contractRenewApproachTicks = CONTRACT_RENEW_APPROACH_ATTEMPT_TICKS;
     }
 
     public LivingEntity getOwner() {
@@ -2889,8 +2919,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             return;
         }
         this.contractTicksRemaining += days * TICKS_PER_DAY;
-        this.contractRenewWarned = false;
-        this.contractRenewWarnPulseTicks = 0;
+        this.contractRenewWarnCount = 0;
+        this.contractRenewApproachTicks = 0;
     }
 
     private boolean isOwnerDirectedTarget(LivingEntity target) {
@@ -3783,8 +3813,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 				}
 			}
 
-            this.maybeStartContractRenewWarningPulse();
-            this.tickContractRenewWarningPulse();
+            this.tickContractRenewWarning();
 
             // --- Owner presence and distance checks (every 20 ticks for performance) ---
             if (this.tickCount % 20 == 0 && this.ownerUuid != null && this.level() instanceof ServerLevel serverLvl) {
@@ -4594,7 +4623,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
         this.contractTicksRemaining = 0;
         this.contractExpirePending = false;
-        this.contractRenewWarnPulseTicks = 0;
+        this.contractRenewApproachTicks = 0;
         UUID exOwner = this.ownerUuid;
         Vec3 awayFrom = this.lastOwnerKnownPos;
         Player notifyPlayer = this.findPlayerAnywhere(exOwner);
@@ -5067,8 +5096,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.ownerUuid = null;
         this.ownerName = null;
         this.contractTicksRemaining = 0;
-        this.contractRenewWarned = false;
-        this.contractRenewWarnPulseTicks = 0;
+        this.contractRenewWarnCount = 0;
+        this.contractRenewApproachTicks = 0;
         this.contractExpirePending = false;
         this.currentContractBundlePayerUuid = null;
 

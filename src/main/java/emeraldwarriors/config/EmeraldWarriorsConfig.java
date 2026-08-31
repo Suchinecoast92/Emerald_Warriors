@@ -5,7 +5,7 @@ import java.util.List;
 
 public final class EmeraldWarriorsConfig {
 
-    public int configVersion = 8;
+    public int configVersion = 16;
 
     public Toggles toggles = new Toggles();
     public Camp camp = new Camp();
@@ -19,14 +19,15 @@ public final class EmeraldWarriorsConfig {
     }
 
     public static final class Camp {
-        public int rarityChance = 530;
+        /** ~1/N chunks; lower = more common. Still far above old playtest (25). */
+        public int rarityChance = 132;
     }
 
     public static final class SolitarySpawn {
-        public int weight = 1;
+        public int weight = 2;
         public int minGroup = 1;
         public int maxGroup = 4;
-        public float naturalSpawnChance = 0.90F;
+        public float naturalSpawnChance = 0.88F;
 
         public List<String> biomeWhitelist = new ArrayList<>();
 

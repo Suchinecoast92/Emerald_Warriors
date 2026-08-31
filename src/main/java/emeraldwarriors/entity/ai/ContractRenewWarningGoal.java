@@ -7,13 +7,13 @@ import net.minecraft.world.entity.player.Player;
 import java.util.EnumSet;
 
 /**
- * Walks toward the owner during the last minutes of a contract.
- * The action-bar warning itself is sent from {@link EmeraldMercenaryEntity} so it
- * still appears if the mercenary is fighting or too far to path.
+ * Short walk toward the owner when a renew-notice fires.
+ * The action-bar warning is always sent from {@link EmeraldMercenaryEntity};
+ * this goal only runs if the mercenary can path (not fighting, owner in range).
  */
 public class ContractRenewWarningGoal extends Goal {
 
-    private static final double APPROACH_RANGE = 96.0D;
+    private static final double APPROACH_RANGE = 48.0D;
     private static final double STAND_DISTANCE = 3.5D;
 
     private final EmeraldMercenaryEntity mercenary;
@@ -33,7 +33,7 @@ public class ContractRenewWarningGoal extends Goal {
         if (this.mercenary.isContractAdmiring() || this.mercenary.isContractExpireNotifying()) {
             return false;
         }
-        if (!this.mercenary.isInContractRenewWarnWindow()) {
+        if (!this.mercenary.wantsContractRenewApproach()) {
             return false;
         }
         if (this.mercenary.getTarget() != null && this.mercenary.getTarget().isAlive()) {

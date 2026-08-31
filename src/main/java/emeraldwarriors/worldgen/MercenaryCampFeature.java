@@ -33,6 +33,13 @@ import java.util.Set;
 
 public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
 
+    /** Max height difference across camp footprint sample points (blocks). */
+    private static final int MAX_CAMP_TERRAIN_SLOPE = 2;
+    /** Footprint checked for flatness and clearing (9×9 at radius 4). */
+    private static final int CAMP_CLEAR_RADIUS = 4;
+    /** Non-air decorations (e.g. single bush) tolerated in the footprint. */
+    private static final int MAX_CLEAR_OBSTACLES = 4;
+
     public MercenaryCampFeature(Codec<NoneFeatureConfiguration> codec) {
         super(codec);
     }
@@ -77,12 +84,12 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
 
         int minY = center.getY();
         int maxY = center.getY();
-        for (int dx = -5; dx <= 5; dx += 5) {
-            for (int dz = -5; dz <= 5; dz += 5) {
+        for (int dx = -CAMP_CLEAR_RADIUS; dx <= CAMP_CLEAR_RADIUS; dx += CAMP_CLEAR_RADIUS) {
+            for (int dz = -CAMP_CLEAR_RADIUS; dz <= CAMP_CLEAR_RADIUS; dz += CAMP_CLEAR_RADIUS) {
                 BlockPos p = level.getHeightmapPos(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, center.offset(dx, 0, dz));
                 minY = Math.min(minY, p.getY());
                 maxY = Math.max(maxY, p.getY());
-                if (maxY - minY > 1) {
+                if (maxY - minY > MAX_CAMP_TERRAIN_SLOPE) {
                     return false;
                 }
             }
@@ -321,15 +328,20 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
     }
 
     private static boolean clearArea(WorldGenLevel level, BlockPos center) {
-        for (int dx = -5; dx <= 5; dx++) {
-            for (int dz = -5; dz <= 5; dz++) {
+        int obstacles = 0;
+        for (int dx = -CAMP_CLEAR_RADIUS; dx <= CAMP_CLEAR_RADIUS; dx++) {
+            for (int dz = -CAMP_CLEAR_RADIUS; dz <= CAMP_CLEAR_RADIUS; dz++) {
                 BlockPos top = center.offset(dx, 0, dz);
                 if (!level.getFluidState(top).isEmpty()) {
                     return false;
                 }
 
                 if (!isSoftSurfaceDecoration(level.getBlockState(top))) {
-                    return false;
+                    obstacles++;
+                    if (obstacles > MAX_CLEAR_OBSTACLES) {
+                        return false;
+                    }
+                    continue;
                 }
                 for (int dy = 1; dy <= 3; dy++) {
                     BlockPos p = top.above(dy);
@@ -338,7 +350,11 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
                         return false;
                     }
                     if (!isSoftSurfaceDecoration(state)) {
-                        return false;
+                        obstacles++;
+                        if (obstacles > MAX_CLEAR_OBSTACLES) {
+                            return false;
+                        }
+                        break;
                     }
                 }
             }
@@ -349,6 +365,7 @@ public class MercenaryCampFeature extends Feature<NoneFeatureConfiguration> {
     private static boolean isSoftSurfaceDecoration(BlockState state) {
         return state.isAir()
                 || state.is(Blocks.SNOW)
+                || state.is(Blocks.SNOW_BLOCK)
                 || state.is(Blocks.SHORT_GRASS)
                 || state.is(Blocks.TALL_GRASS)
                 || state.is(Blocks.FERN)

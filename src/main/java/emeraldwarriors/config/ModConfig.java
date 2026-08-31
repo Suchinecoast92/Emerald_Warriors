@@ -116,6 +116,88 @@ public final class ModConfig {
             config.configVersion = 8;
         }
 
+        if (config.configVersion < 9) {
+            // Village-like camp density (~34-chunk spacing equivalent) and fewer wanderers.
+            // Force defaults: older playtest configs used very high density (e.g. chance 25, weight 10).
+            if (config.camp != null) {
+                config.camp.rarityChance = 1200;
+            }
+            if (config.solitarySpawn != null) {
+                config.solitarySpawn.weight = 1;
+                config.solitarySpawn.naturalSpawnChance = 0.27F;
+            }
+            config.configVersion = 9;
+        }
+
+        if (config.configVersion < 10) {
+            // Slightly denser than v9 (too sparse in playtest), still far below old playtest extremes.
+            if (config.camp != null) {
+                config.camp.rarityChance = 500;
+            }
+            if (config.solitarySpawn != null) {
+                config.solitarySpawn.weight = 1;
+                config.solitarySpawn.naturalSpawnChance = 0.50F;
+            }
+            config.configVersion = 10;
+        }
+
+        if (config.configVersion < 11) {
+            if (config.camp != null) {
+                config.camp.rarityChance = 280;
+            }
+            if (config.solitarySpawn != null) {
+                config.solitarySpawn.weight = 2;
+                config.solitarySpawn.naturalSpawnChance = 0.70F;
+            }
+            config.configVersion = 11;
+        }
+
+        if (config.configVersion < 12) {
+            // +15% density vs v11 (lower rarityChance, higher spawn chance).
+            if (config.camp != null) {
+                config.camp.rarityChance = 243;
+            }
+            if (config.solitarySpawn != null) {
+                config.solitarySpawn.weight = 2;
+                config.solitarySpawn.naturalSpawnChance = 0.80F;
+            }
+            config.configVersion = 12;
+        }
+
+        if (config.configVersion < 13) {
+            // +10% density vs v12.
+            if (config.camp != null) {
+                config.camp.rarityChance = 219;
+            }
+            if (config.solitarySpawn != null) {
+                config.solitarySpawn.weight = 2;
+                config.solitarySpawn.naturalSpawnChance = 0.88F;
+            }
+            config.configVersion = 13;
+        }
+
+        if (config.configVersion < 14) {
+            // Campaments 25% more common than v13 (219 -> 164).
+            if (config.camp != null) {
+                config.camp.rarityChance = 164;
+            }
+            config.configVersion = 14;
+        }
+
+        if (config.configVersion < 15) {
+            if (config.camp != null) {
+                config.camp.rarityChance = 116;
+            }
+            config.configVersion = 15;
+        }
+
+        if (config.configVersion < 16) {
+            if (config.camp != null) {
+                config.camp.rarityChance = 132;
+            }
+            config.configVersion = 16;
+        }
+
         save(path, config);
     }
 
