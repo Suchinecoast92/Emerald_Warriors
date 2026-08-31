@@ -3,7 +3,8 @@
 ## [Unreleased]
 
 ### Correcciones
-- **Contrato:** aviso «por concluir» en action bar 1 vez por minuto en los últimos ~3 min (3 avisos). En cada aviso intenta acercarse ~10 s si puede; el mensaje sale igual si no puede.
+- **Contrato:** aviso «por concluir» en action bar 2 veces en los últimos ~5 min (~5:00 y ~2:30); al expirar sale «finalizado». En cada aviso intenta acercarse ~10 s si puede; el mensaje sale igual si no puede.
+- **NEUTRAL:** arma y escudo ocultos en render mientras no combate; se muestran al defenderse (contratados y salvajes). FOLLOW/GUARD/PATROL sin cambios.
 - **Spawn:** campamentos `rarityChance` 132 (equilibrio final); errantes weight 2 + `naturalSpawnChance` 0.88. Filtro de terreno de campamentos algo más permisivo; penalización de nieve/plains intacta. Aldeas sin cambios.
 - **Catalejo:** las órdenes tácticas vuelven a funcionar tras salir y reentrar al mundo (cooldown del cliente reiniciado al detectar sesión nueva).
 - **Worldgen:** spawn de mercenarios en campamentos diferido al hilo del servidor; evita congelar el mundo al generar chunks nuevos.

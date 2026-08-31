@@ -247,7 +247,7 @@ Archivo `config/emerald_warriors.json` (se crea al primer arranque):
 ## Qué debes saber (jugador)
 
 1. **Minecraft 1.21.11 + Fabric + Java 21.** Sin Fabric API no carga.
-2. **Contrato en dos clics** con esmeralda (propuesta → confirmar en 10 s). Renovar: shift + clic con esmeraldas (múltiplos exactos de la tarifa). En los últimos ~3 min del contrato verás **3 avisos en la action bar** (uno por minuto); el mercenario intentará acercarse si puede.
+2. **Contrato en dos clics** con esmeralda (propuesta → confirmar en 10 s). Renovar: shift + clic con esmeraldas (múltiplos exactos de la tarifa). En los últimos ~5 min del contrato verás **2 avisos en la action bar** (~5:00 y ~2:30); al expirar sale el aviso de finalizado. El mercenario intentará acercarse si puede.
 3. **Órdenes base** (FOLLOW/GUARD/PATROL/NEUTRAL) y **órdenes tácticas del catalejo** son cosas distintas: el catalejo mueve o ataca sin cambiar la orden base. El hold **persiste al relog**.
 4. **Cuerno y catalejo** mandan a 128 bloques. Vincula mercenarios con shift + clic derecho; el clic normal (cuerno) o el clic izquierdo apuntando (catalejo) aplica la orden.
 5. **Monturas:** la correa solo sirve para **vincular/desvincular**. En FOLLOW/GUARD/PATROL la montura sigue al merc a pie; en **NEUTRAL** no la sigue (establo). Si montas tú, los mercs en FOLLOW suben y **no bajan** mientras sigas montado.

@@ -137,10 +137,11 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private static final int MAX_STORED_CONTRACT_DAYS = 12;
     private static final int CONTRACT_ADMIRE_TICKS = 60;
     private static final boolean MERCENARY_DIALOGUE_ENABLED = false;
-    public static final int CONTRACT_RENEW_WARN_TICKS = 3600;
-    /** One action-bar notice per minute in the last 3 minutes (3 notices total). */
-    private static final int CONTRACT_RENEW_WARN_INTERVAL_TICKS = 1200;
-    private static final int CONTRACT_RENEW_WARN_MAX = 3;
+    /** Last ~5 minutes of a contract (6000 ticks). */
+    public static final int CONTRACT_RENEW_WARN_TICKS = 6000;
+    /** Spacing between the two renew notices (~2.5 minutes). */
+    private static final int CONTRACT_RENEW_WARN_INTERVAL_TICKS = 3000;
+    private static final int CONTRACT_RENEW_WARN_MAX = 2;
     /** How long each notice tries to walk toward the owner (~10s). */
     private static final int CONTRACT_RENEW_APPROACH_ATTEMPT_TICKS = 200;
     private static final int CONTRACT_EXPIRE_APPROACH_TICKS = 300;
@@ -171,6 +172,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private static final EntityDataAccessor<Integer> DATA_ORDER_ORDINAL = SynchedEntityData.defineId(EmeraldMercenaryEntity.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Boolean> DATA_IS_CHARGING_CROSSBOW = SynchedEntityData.defineId(EmeraldMercenaryEntity.class, EntityDataSerializers.BOOLEAN);
     private static final EntityDataAccessor<Boolean> DATA_IS_CONTRACT_ADMIRING = SynchedEntityData.defineId(EmeraldMercenaryEntity.class, EntityDataSerializers.BOOLEAN);
+    /** Synced so client can show/hide held gear while NEUTRAL. */
+    private static final EntityDataAccessor<Boolean> DATA_IN_COMBAT = SynchedEntityData.defineId(EmeraldMercenaryEntity.class, EntityDataSerializers.BOOLEAN);
 
     private MercenaryRole currentRole = MercenaryRole.NONE;
 
@@ -562,6 +565,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         builder.define(DATA_ORDER_ORDINAL, MercenaryOrder.FOLLOW.ordinal());
         builder.define(DATA_IS_CHARGING_CROSSBOW, false);
         builder.define(DATA_IS_CONTRACT_ADMIRING, false);
+        builder.define(DATA_IN_COMBAT, false);
     }
 
     public MercenaryRank getRank() {
@@ -959,6 +963,45 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         // No neutral order exists in the 3-order system. All orders allow defensive combat.
         // Proactive vs defensive is controlled by refreshTargetGoalsByOrder() (NearestAttackableTargetGoal)
         return this.getCurrentOrder() == MercenaryOrder.NEUTRAL;
+    }
+
+    /**
+     * Client/render: hide main-hand weapon and offhand shield while NEUTRAL and idle.
+     * FOLLOW/GUARD/PATROL always show gear. NEUTRAL shows gear only while defending/in combat
+     * (or during the contract-admire emerald pose).
+     */
+    public boolean shouldShowHeldGearForRender() {
+        if (!this.isNeutralOrder()) {
+            return true;
+        }
+        if (this.isContractAdmiringForRender()) {
+            return true;
+        }
+        return this.getEntityData().get(DATA_IN_COMBAT);
+    }
+
+    private void syncInCombatFlag() {
+        if (this.level().isClientSide()) {
+            return;
+        }
+        boolean inCombat = false;
+        LivingEntity target = this.getTarget();
+        if (target != null && target.isAlive()) {
+            inCombat = true;
+        } else if (this.isAggressive()) {
+            inCombat = true;
+        } else {
+            LivingEntity hurtBy = this.getLastHurtByMob();
+            if (hurtBy != null && hurtBy.isAlive()) {
+                int since = this.tickCount - this.getLastHurtByMobTimestamp();
+                if (since >= 0 && since < 40) {
+                    inCombat = true;
+                }
+            }
+        }
+        if (this.getEntityData().get(DATA_IN_COMBAT) != inCombat) {
+            this.getEntityData().set(DATA_IN_COMBAT, inCombat);
+        }
     }
 
     public boolean isInDisciplineAggro() {
@@ -2091,8 +2134,8 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     }
 
     /**
-     * How many of the 3 minute-bucket notices should already have been sent
-     * for the given remaining contract ticks (1 at ~3:00, 2 at ~2:00, 3 at ~1:00).
+     * How many renew notices should already have been sent for the given remaining
+     * contract ticks (1 at ~5:00, 2 at ~2:30). Expiry uses a separate "ended" message.
      */
     private static int contractRenewWarnIndexForRemaining(int remainingTicks) {
         if (remainingTicks <= 0 || remainingTicks > CONTRACT_RENEW_WARN_TICKS) {
@@ -2103,7 +2146,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     }
 
     /**
-     * Action-bar renew reminders once per minute in the last 3 minutes (3 total).
+     * Action-bar renew reminders twice in the last ~5 minutes (~5:00 and ~2:30).
      * Each notice also starts a short approach attempt if the AI can walk over;
      * the message is sent even when approach is impossible (combat, distance, etc.).
      */
@@ -3664,6 +3707,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             if (this.getEntityData().get(DATA_IS_CONTRACT_ADMIRING) != shouldAdmireFlag) {
                 this.getEntityData().set(DATA_IS_CONTRACT_ADMIRING, shouldAdmireFlag);
             }
+            this.syncInCombatFlag();
 
             if (this.pendingContractAction != PendingContractAction.NONE) {
                 if (this.getLastHurtByMob() != null && (this.tickCount - this.getLastHurtByMobTimestamp() < 10)) {

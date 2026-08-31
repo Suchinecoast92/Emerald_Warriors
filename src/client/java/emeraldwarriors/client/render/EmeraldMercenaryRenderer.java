@@ -199,6 +199,16 @@ public class EmeraldMercenaryRenderer extends HumanoidMobRenderer<EmeraldMercena
             }
         }
 
+        if (!entity.shouldShowHeldGearForRender()) {
+            state.rightHandItemStack = ItemStack.EMPTY;
+            state.leftHandItemStack = ItemStack.EMPTY;
+            state.rightHandItemState.clear();
+            state.leftHandItemState.clear();
+            state.rightArmPose = HumanoidModel.ArmPose.EMPTY;
+            state.leftArmPose = HumanoidModel.ArmPose.EMPTY;
+            state.isUsingItem = false;
+        }
+
         Identifier prev = LOGGED_TEXTURES.get(entity.getId());
         if (prev == null || !prev.equals(newTexture)) {
             LOGGED_TEXTURES.put(entity.getId(), newTexture);
