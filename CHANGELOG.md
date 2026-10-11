@@ -1,10 +1,11 @@
 # Changelog
 
-## [Unreleased]
+## [1.1.0] - 2026-10-11
 
 ### Correcciones
 - **Contrato:** aviso «por concluir» en action bar 2 veces en los últimos ~5 min (~5:00 y ~2:30); al expirar sale «finalizado». En cada aviso intenta acercarse ~10 s si puede; el mensaje sale igual si no puede.
-- **NEUTRAL:** arma y escudo ocultos en render mientras no combate; se muestran al defenderse (contratados y salvajes). FOLLOW/GUARD/PATROL sin cambios.
+- **Lealtad:** descuento de renovación por días con el mismo dueño (20/40/55 %). Tras ~20–35 días (umbral impredecible) el mercenario puede pasar a **contrato permanente** (action bar + sonido de logro challenge); ya no cobra días y solo termina a mano / disciplina / muerte.
+- **GUARD/PATROL:** ya no detectan hostiles a través de paredes; requieren línea de visión (estilo vanilla). Retaliación, defensa del dueño y órdenes del catalejo no se ven afectadas.
 - **Spawn:** campamentos `rarityChance` 132 (equilibrio final); errantes weight 2 + `naturalSpawnChance` 0.88. Filtro de terreno de campamentos algo más permisivo; penalización de nieve/plains intacta. Aldeas sin cambios.
 - **Catalejo:** las órdenes tácticas vuelven a funcionar tras salir y reentrar al mundo (cooldown del cliente reiniciado al detectar sesión nueva).
 - **Worldgen:** spawn de mercenarios en campamentos diferido al hilo del servidor; evita congelar el mundo al generar chunks nuevos.

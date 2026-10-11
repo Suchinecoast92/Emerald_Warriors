@@ -144,6 +144,18 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private static final int CONTRACT_RENEW_WARN_MAX = 2;
     /** How long each notice tries to walk toward the owner (~10s). */
     private static final int CONTRACT_RENEW_APPROACH_ATTEMPT_TICKS = 200;
+
+    /** Loyalty discount tiers (days with the same owner). */
+    private static final int LOYALTY_TIER1_DAYS = 7;
+    private static final int LOYALTY_TIER2_DAYS = 14;
+    private static final int LOYALTY_TIER3_DAYS = 21;
+    private static final int LOYALTY_TIER1_PERCENT = 20;
+    private static final int LOYALTY_TIER2_PERCENT = 40;
+    private static final int LOYALTY_TIER3_PERCENT = 55;
+    /** Permanent unlock window: day 20..35 (inclusive span via UUID). */
+    private static final int PERMANENT_THRESHOLD_MIN = 20;
+    private static final int PERMANENT_THRESHOLD_SPAN = 16;
+    private static final float PERMANENT_DAILY_CHANCE = 0.15F;
     private static final int CONTRACT_EXPIRE_APPROACH_TICKS = 300;
     private static final int CONTRACT_EXPIRE_RETREAT_DELAY_TICKS = 40;
     private static final double CONTRACT_EXPIRE_RETREAT_SPEED = 0.65D;
@@ -214,6 +226,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     private int contractTicksRemaining;
     private int contractEmeraldsPerService;
     private int contractDaysPerPurchase;
+    private boolean permanentContract;
+    private int loyaltyDaysWithOwner;
+    private int loyaltyLastCountedDay = Integer.MIN_VALUE;
 
     private UUID bundleDiscountPlayerUuid;
     private int bundleDiscountPercent;
@@ -1358,6 +1373,15 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         if (this.ownerUuid != null) {
             output.putInt("ContractTicks", this.contractTicksRemaining);
         }
+        if (this.permanentContract) {
+            output.putInt("PermanentContract", 1);
+        }
+        if (this.loyaltyDaysWithOwner > 0) {
+            output.putInt("LoyaltyDays", this.loyaltyDaysWithOwner);
+        }
+        if (this.loyaltyLastCountedDay != Integer.MIN_VALUE) {
+            output.putInt("LoyaltyLastDay", this.loyaltyLastCountedDay);
+        }
 
         if (this.contractRenewWarnCount > 0) {
             output.putInt("ContractRenewWarnCount", this.contractRenewWarnCount);
@@ -1561,6 +1585,9 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         });
 
         this.contractTicksRemaining = input.getIntOr("ContractTicks", this.contractTicksRemaining);
+        this.permanentContract = input.getIntOr("PermanentContract", this.permanentContract ? 1 : 0) != 0;
+        this.loyaltyDaysWithOwner = Math.max(0, input.getIntOr("LoyaltyDays", this.loyaltyDaysWithOwner));
+        this.loyaltyLastCountedDay = input.getIntOr("LoyaltyLastDay", this.loyaltyLastCountedDay);
         this.contractRenewWarnCount = Math.max(0, input.getIntOr("ContractRenewWarnCount", this.contractRenewWarnCount));
         if (this.contractRenewWarnCount <= 0
                 && input.getIntOr("ContractRenewWarned", 0) != 0) {
@@ -2070,10 +2097,17 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     }
 
     public int getContractDaysRemaining() {
+        if (this.permanentContract) {
+            return Integer.MAX_VALUE / 4;
+        }
         if (this.contractTicksRemaining <= 0) {
             return 0;
         }
         return (this.contractTicksRemaining + TICKS_PER_DAY - 1) / TICKS_PER_DAY;
+    }
+
+    public boolean isPermanentContract() {
+        return this.permanentContract && this.ownerUuid != null;
     }
 
     public Player getContractOwnerPlayer() {
@@ -2096,6 +2130,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
 
     public boolean isInContractRenewWarnWindow() {
         return this.ownerUuid != null
+                && !this.permanentContract
                 && this.contractTicksRemaining > 0
                 && this.contractTicksRemaining <= CONTRACT_RENEW_WARN_TICKS;
     }
@@ -2131,6 +2166,106 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         }
         this.sendContractInfo(player, Component.translatable(
                 "emerald_warriors.contract.terminated", this.getMercenaryName()));
+    }
+
+    private void sendContractPermanent(Player player) {
+        if (player == null) {
+            return;
+        }
+        this.sendContractInfo(player, Component.translatable(
+                "emerald_warriors.contract.permanent", this.getMercenaryName()));
+    }
+
+    private void clearLoyaltyState() {
+        this.permanentContract = false;
+        this.loyaltyDaysWithOwner = 0;
+        this.loyaltyLastCountedDay = Integer.MIN_VALUE;
+    }
+
+    private void beginLoyaltyTracking() {
+        this.permanentContract = false;
+        this.loyaltyDaysWithOwner = 0;
+        this.loyaltyLastCountedDay = (int) (this.level().getDayTime() / (long) TICKS_PER_DAY);
+    }
+
+    private int getPermanentThresholdDays() {
+        // Deterministic per merc: 20..35
+        int salt = this.getUUID().hashCode();
+        return PERMANENT_THRESHOLD_MIN + Math.floorMod(salt, PERMANENT_THRESHOLD_SPAN);
+    }
+
+    private int getLoyaltyDiscountPercent() {
+        if (this.loyaltyDaysWithOwner >= LOYALTY_TIER3_DAYS) {
+            return LOYALTY_TIER3_PERCENT;
+        }
+        if (this.loyaltyDaysWithOwner >= LOYALTY_TIER2_DAYS) {
+            return LOYALTY_TIER2_PERCENT;
+        }
+        if (this.loyaltyDaysWithOwner >= LOYALTY_TIER1_DAYS) {
+            return LOYALTY_TIER1_PERCENT;
+        }
+        return 0;
+    }
+
+    private int applyPercentDiscountToRate(int baseRate, int daysPerPurchase, int percent) {
+        if (percent <= 0 || baseRate <= 0) {
+            return baseRate;
+        }
+        if (daysPerPurchase <= 0) {
+            daysPerPurchase = 1;
+        }
+        int perDay = Math.max(1, baseRate / daysPerPurchase);
+        int discountedPerDay = Math.max(1, (perDay * (100 - percent)) / 100);
+        return Math.max(1, discountedPerDay * daysPerPurchase);
+    }
+
+    private void tickLoyaltyProgress() {
+        if (this.ownerUuid == null || this.permanentContract) {
+            return;
+        }
+
+        int currentDay = (int) (this.level().getDayTime() / (long) TICKS_PER_DAY);
+        if (this.loyaltyLastCountedDay == Integer.MIN_VALUE) {
+            this.loyaltyLastCountedDay = currentDay;
+            return;
+        }
+        if (currentDay <= this.loyaltyLastCountedDay) {
+            return;
+        }
+
+        int daysPassed = currentDay - this.loyaltyLastCountedDay;
+        this.loyaltyLastCountedDay = currentDay;
+        int threshold = this.getPermanentThresholdDays();
+
+        for (int i = 0; i < daysPassed; i++) {
+            this.loyaltyDaysWithOwner++;
+            if (this.loyaltyDaysWithOwner >= threshold && this.random.nextFloat() < PERMANENT_DAILY_CHANCE) {
+                this.grantPermanentContract();
+                return;
+            }
+        }
+    }
+
+    private void grantPermanentContract() {
+        if (this.permanentContract || this.ownerUuid == null) {
+            return;
+        }
+        this.permanentContract = true;
+        this.contractExpirePending = false;
+        this.contractRenewWarnCount = 0;
+        this.contractRenewApproachTicks = 0;
+        this.contractTicksRemaining = Math.max(this.contractTicksRemaining, TICKS_PER_DAY);
+
+        if (this.level() instanceof ServerLevel sl) {
+            sl.sendParticles(ParticleTypes.HAPPY_VILLAGER,
+                    this.getX(), this.getY(0.6), this.getZ(),
+                    18, 0.45, 0.55, 0.45, 0.02);
+            sl.playSound(null, this.getX(), this.getY(), this.getZ(),
+                    SoundEvents.UI_TOAST_CHALLENGE_COMPLETE, SoundSource.MASTER, 0.7F, 1.0F);
+        }
+
+        Player owner = this.findOwnerPlayerAnywhere();
+        this.sendContractPermanent(owner);
     }
 
     /**
@@ -2627,6 +2762,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.ownerName = null;
         this.contractTicksRemaining = 0;
         this.currentContractBundlePayerUuid = null;
+        this.clearLoyaltyState();
         this.pendingContractPlayer = null;
         this.attentionPlayer = null;
         this.attentionTicks = 0;
@@ -2701,13 +2837,14 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
     }
 
     private int getDiscountedContractRateFor(Player player, int baseRate, int daysPerPurchase) {
+        int rate = this.applyPercentDiscountToRate(baseRate, daysPerPurchase, this.getLoyaltyDiscountPercent());
         if (!this.isBundleDiscountAvailableFor(player)) {
-            return baseRate;
+            return rate;
         }
         if (daysPerPurchase <= 0) {
             daysPerPurchase = 1;
         }
-        int perDay = Math.max(1, baseRate / daysPerPurchase);
+        int perDay = Math.max(1, rate / daysPerPurchase);
         int discountedPerDay = Math.max(1, (perDay * (100 - this.bundleDiscountPercent)) / 100);
         return Math.max(1, discountedPerDay * daysPerPurchase);
     }
@@ -3163,8 +3300,18 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             // During raids, patrolRadius + 12 blocks for PATROL
             double raidBonus = this.isRaidActive() ? 12.0 : 0.0;
 
-            if (this.isRecentAttacker(target) || this.isOwnerDefenseTarget(target) || this.isTacticalDirectedTarget(target)) {
+            if (this.isRecentAttacker(target)
+                    || this.isOwnerDefenseTarget(target)
+                    || this.isTacticalDirectedTarget(target)
+                    || this.isVillagerDefenseTarget(target)
+                    || this.isBrotherhoodAssistTarget(target)) {
                 super.setTarget(target);
+                return;
+            }
+
+            // Proactive GUARD/PATROL acquisition needs LOS (vanilla NearestAttackableTargetGoal).
+            if ((order == MercenaryOrder.GUARD || order == MercenaryOrder.PATROL)
+                    && !this.hasLineOfSight(target)) {
                 return;
             }
 
@@ -3838,23 +3985,26 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                 this.contractTicksRemaining = 0;
             }
 			if (!this.isContractAdmiring() && this.ownerUuid != null) {
-				if (this.contractExpirePending) {
-					if (!this.isInCombatForContractExpire()) {
-						this.contractExpirePending = false;
-						this.contractTicksRemaining = 0;
-						this.onContractExpired();
-					}
-				} else if (this.contractTicksRemaining > 0) {
-					this.contractTicksRemaining--;
-					if (this.contractTicksRemaining == 0) {
-						if (this.isInCombatForContractExpire()) {
-							this.contractExpirePending = true;
-							this.contractTicksRemaining = 1;
-						} else {
-							this.onContractExpired();
-						}
-					}
-				}
+                this.tickLoyaltyProgress();
+                if (!this.permanentContract) {
+                    if (this.contractExpirePending) {
+                        if (!this.isInCombatForContractExpire()) {
+                            this.contractExpirePending = false;
+                            this.contractTicksRemaining = 0;
+                            this.onContractExpired();
+                        }
+                    } else if (this.contractTicksRemaining > 0) {
+                        this.contractTicksRemaining--;
+                        if (this.contractTicksRemaining == 0) {
+                            if (this.isInCombatForContractExpire()) {
+                                this.contractExpirePending = true;
+                                this.contractTicksRemaining = 1;
+                            } else {
+                                this.onContractExpired();
+                            }
+                        }
+                    }
+                }
 			}
 
             this.tickContractRenewWarning();
@@ -4678,6 +4828,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.ownerUuid = null;
         this.ownerName = null;
         this.currentContractBundlePayerUuid = null;
+        this.clearLoyaltyState();
         this.getNavigation().stop();
         this.setTarget(null);
         this.setAggressive(false);
@@ -4982,6 +5133,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
                 }
             }
             this.setCurrentOrder(MercenaryOrder.FOLLOW);
+            this.beginLoyaltyTracking();
             this.addContractDays(pendingDays);
             this.giveInitialContractArrowsIfNeeded();
             this.refreshCombatRoleAndGoals();
@@ -5144,6 +5296,7 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
         this.contractRenewApproachTicks = 0;
         this.contractExpirePending = false;
         this.currentContractBundlePayerUuid = null;
+        this.clearLoyaltyState();
 
         this.pendingContractPlayer = null;
         this.attentionPlayer = null;
@@ -5245,6 +5398,10 @@ public class EmeraldMercenaryEntity extends PathfinderMob implements RangedAttac
             if (this.ownerUuid != null) {
                 boolean canManage = isOwner;
                 if (isSneaking && hand == InteractionHand.MAIN_HAND && canManage && !this.level().isClientSide()) {
+                    if (this.isPermanentContract()) {
+                        this.sendContractPermanent(player);
+                        return InteractionResult.CONSUME;
+                    }
                     int baseRate = this.getContractEmeraldsPerServiceFor(player);
                     int daysPerPurchase = this.getContractDaysPerPurchase();
                     if (daysPerPurchase <= 0) {

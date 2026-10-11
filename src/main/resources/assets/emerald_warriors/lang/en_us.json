@@ -31,6 +31,7 @@
   "emerald_warriors.contract.extended": "Contract extended: +%1$s. Total: %2$s.",
   "emerald_warriors.contract.ending": "Contract ending soon — %s",
   "emerald_warriors.contract.terminated": "Contract ended — %s",
+  "emerald_warriors.contract.permanent": "Permanent contract — %s",
   "emerald_warriors.contract.max": "Contract at maximum.",
   "emerald_warriors.contract.renew_unavailable": "Renewal unavailable.",
   "emerald_warriors.contract.hire_available_in": "Available for hire in %s.",

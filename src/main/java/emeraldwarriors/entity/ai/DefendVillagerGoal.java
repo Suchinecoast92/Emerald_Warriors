@@ -279,7 +279,8 @@ public class DefendVillagerGoal extends TargetGoal {
                 return false;
             }
         }
-        return true;
+        // Vanilla-style (iron golem / NearestAttackableTargetGoal): need LOS to the threat.
+        return this.mercenary.hasLineOfSight(attacker);
     }
 
     private boolean shouldConsiderThreat(LivingEntity currentTarget, LivingEntity attacker, LivingEntity defendable) {

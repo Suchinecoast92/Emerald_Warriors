@@ -2,9 +2,9 @@
 
 Mod de Fabric para **Minecraft 1.21.11** que añade mercenarios contratables con esmeraldas: órdenes (cuerno + catalejo), monturas autónomas, IA de combate, rangos, defensa de aldeanos en raid y PvP configurable.
 
-**Versión actual: 1.0.0**
+**Versión actual: 1.1.0**
 
-Inspirado en el sistema de mercenarios de TheAncientGuard, adaptado a la API moderna de Minecraft (Mojang mappings + Fabric).
+Evolución de TheAncientGuard (mod de mercenarios del mismo autor para 1.20.1), rediseñado con un enfoque más vanilla y adaptado a la API moderna de Minecraft (Mojang mappings + Fabric).
 
 > **Para jugar ya:** lee [Qué debes saber](#qué-debes-saber-jugador). Ahí están los detalles que suelen confundir (catalejo vs órdenes base, monturas, camello, PvP y raids).
 
@@ -12,7 +12,7 @@ Inspirado en el sistema de mercenarios de TheAncientGuard, adaptado a la API mod
 
 1. Instala **Fabric Loader** para Minecraft 1.21.11.
 2. Añade **Fabric API** a tu carpeta `mods/`.
-3. Coloca `emerald_warriors-1.0.0.jar` en `mods/`.
+3. Coloca `emerald_warriors-1.1.0.jar` en `mods/`.
 4. Requiere **Java 21**.
 
 ## Inicio rápido
@@ -28,6 +28,7 @@ Inspirado en el sistema de mercenarios de TheAncientGuard, adaptado a la API mod
 ### Contratos
 - Tarifa y días por compra según rango (valores deterministas por UUID del mercenario).
 - Renovación: shift + clic derecho con esmeraldas (múltiplos exactos de la tarifa base; máx. 12 días acumulados).
+- **Lealtad:** renovar cuesta menos cuanto más tiempo lleves con el mismo mercenario; tras varias semanas puede volverse **contrato permanente** (aviso en action bar).
 - Pago con **bundle/saco** de esmeraldas: cambio automático, descuento en la siguiente compra y reducción de ban por disciplina.
 - Al expirar: mensaje al ex-dueño, retirada y orden **NEUTRAL** (permanece en el mundo).
 
@@ -247,7 +248,7 @@ Archivo `config/emerald_warriors.json` (se crea al primer arranque):
 ## Qué debes saber (jugador)
 
 1. **Minecraft 1.21.11 + Fabric + Java 21.** Sin Fabric API no carga.
-2. **Contrato en dos clics** con esmeralda (propuesta → confirmar en 10 s). Renovar: shift + clic con esmeraldas (múltiplos exactos de la tarifa). En los últimos ~5 min del contrato verás **2 avisos en la action bar** (~5:00 y ~2:30); al expirar sale el aviso de finalizado. El mercenario intentará acercarse si puede.
+2. **Contrato en dos clics** con esmeralda (propuesta → confirmar en 10 s). Renovar: shift + clic con esmeraldas (múltiplos exactos de la tarifa). En los últimos ~5 min del contrato verás **2 avisos en la action bar** (~5:00 y ~2:30); al expirar sale el aviso de finalizado. El mercenario intentará acercarse si puede. Con el tiempo la renovación se abarata por lealtad y puede pasar a **contrato permanente** (sin cobro de días; si intentas renovar, verás el mismo aviso).
 3. **Órdenes base** (FOLLOW/GUARD/PATROL/NEUTRAL) y **órdenes tácticas del catalejo** son cosas distintas: el catalejo mueve o ataca sin cambiar la orden base. El hold **persiste al relog**.
 4. **Cuerno y catalejo** mandan a 128 bloques. Vincula mercenarios con shift + clic derecho; el clic normal (cuerno) o el clic izquierdo apuntando (catalejo) aplica la orden.
 5. **Monturas:** la correa solo sirve para **vincular/desvincular**. En FOLLOW/GUARD/PATROL la montura sigue al merc a pie; en **NEUTRAL** no la sigue (establo). Si montas tú, los mercs en FOLLOW suben y **no bajan** mientras sigas montado.
@@ -295,4 +296,4 @@ No se concede permiso para copiar, modificar, distribuir ni crear obras derivada
 
 ---
 
-**Estado:** v1.0.0 — monturas pulidas (follow montado, NEUTRAL/establo, velocidad por tipo), retorno al ancla tras curarse, corazones animados en GUI.
+**Estado:** v1.1.0 — lealtad y contrato permanente, avisos de renovación, GUARD/PATROL con línea de visión, equilibrio final de spawns.
